@@ -1,4 +1,5 @@
-"""Background camera capture thread + GestureInput, a Node exposing
+"""
+Background camera capture thread + GestureInput, a Node exposing
 hand-tracking signals as live Signal plus CameraOverlay
 to render the live annotated camera feed directly on the canvas.
 """
