@@ -20,13 +20,13 @@ with Pipeline() as pipeline:
 
     bars = Bars(values=[audio.low, audio.mid, audio.high], color=(1.0, 0.4, 0.2))
 
-    particles = Particles(max_count=10, color=(0.6, 0.8, 1.0), color_by="speed")
-    particles.count = audio.low.map(80, 10)
-    particles.speed = audio.mid.map(0.1, 5)
+    particles = Particles(max_count=1500, color=(0.6, 0.8, 1.0), color_by="speed")
+    particles.count = audio.low.map(400, 1500)
+    particles.speed = audio.mid.map(0.1, 1.5)
     particles.size = audio.high.map(4.0, 6.0)
     particles.turbulence = jitter
 
-    output = Output(background=(0.26, 0.1, 0.02))
+    output = Output(background=(0.26, 0.1, 0.02), bloom=0.5, bloom_threshold=0.6, render_scale=1.5)
     circle >> output
     bars >> output
     particles >> output

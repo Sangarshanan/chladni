@@ -3,9 +3,12 @@
 the Output sink that the runner renders to screen.
 """
 
+import moderngl
 import numpy as np
 
 from .core import Node
+from .gfx import set_blend, state
+from .post import DEFAULT_SETTINGS
 from .signals import evaluate
 
 
@@ -28,24 +31,68 @@ class Param:
 
 
 class Geometry(Node):
-    """Base for drawable shapes. Subclasses implement `vertices()`."""
+    """Base for drawable shapes. Subclasses implement `vertices()` (or a custom `render(ctx)`).
+
+    `blend` selects compositing ("alpha", "add", "screen" or "replace") and
+    `opacity` scales the layer's contribution.
+    """
+
+    blend = "alpha"
+    opacity = Param(1.0)
 
     def vertices(self):
         raise NotImplementedError
 
 
+_CIRCLE_VERTEX = """
+#version 330
+in vec2 in_pos;
+in vec2 in_local;
+out vec2 v_local;
+void main() {
+    gl_Position = vec4(in_pos, 0.0, 1.0);
+    v_local = in_local;
+}
+"""
+
+_CIRCLE_FRAGMENT = """
+#version 330
+in vec2 v_local;
+uniform vec3 color;
+uniform float opacity;
+uniform float softness;
+uniform float edge;
+out vec4 f_color;
+void main() {
+    float d = length(v_local);
+    float inner = max(1.0 - softness, 0.0);
+    float a = 1.0 - smoothstep(inner - edge, 1.0 + edge, d);
+    a *= opacity;
+    if (a <= 0.0) discard;
+    f_color = vec4(color * a, a);
+}
+"""
+
+
 class Circle(Geometry):
-    """A filled circle. `x`, `y`, `radius`, and `color` may be Signals."""
+    """An anti-aliased disc. `x`, `y`, `radius`, `color` and `softness` may be Signals.
+
+    `radius` is in NDC units of the window height, so the circle stays round at any
+    aspect ratio. `softness` feathers the rim (0 = crisp, 1 = fully radial falloff).
+    """
 
     x = Param(0.0)
     y = Param(0.0)
     radius = Param(0.2)
     color = Param((1.0, 1.0, 1.0))
+    softness = Param(0.0)
 
-    def __init__(self, x=0.0, y=0.0, radius=0.2, color=(1.0, 1.0, 1.0), segments=48):
+    def __init__(self, x=0.0, y=0.0, radius=0.2, color=(1.0, 1.0, 1.0), softness=0.0, segments=48):
         super().__init__()
         self.x, self.y, self.radius, self.color = x, y, radius, color
+        self.softness = softness
         self.segments = segments
+        self._prog = self._vbo = self._vao = None
 
     def vertices(self):
         angles = np.linspace(0, 2 * np.pi, self.segments, endpoint=False)
@@ -54,6 +101,38 @@ class Circle(Geometry):
         positions = np.vstack([[cx, cy], rim, rim[:1]]).astype("f4")
         colors = np.tile(np.array(self.color, dtype="f4"), (len(positions), 1))
         return positions, colors, "fan"
+
+    def render(self, ctx):
+        if self._prog is None:
+            self._prog = ctx.program(vertex_shader=_CIRCLE_VERTEX, fragment_shader=_CIRCLE_FRAGMENT)
+            self._vbo = ctx.buffer(reserve=6 * 4 * 4, dynamic=True)
+            self._vao = ctx.vertex_array(self._prog, [(self._vbo, "2f 2f", "in_pos", "in_local")])
+        width, height = ctx.fbo.size
+        cx, cy, r = float(self.x), float(self.y), max(float(self.radius), 1e-4)
+        rx = r * height / width
+        radius_px = r * height / 2.0
+        pad = 1.0 + 2.0 / max(radius_px, 1.0)
+        x0, x1 = cx - rx * pad, cx + rx * pad
+        y0, y1 = cy - r * pad, cy + r * pad
+        quad = np.array([
+            x0, y0, -pad, -pad,  x1, y0, pad, -pad,  x1, y1, pad, pad,
+            x0, y0, -pad, -pad,  x1, y1, pad, pad,  x0, y1, -pad, pad,
+        ], dtype="f4")
+        self._vbo.write(quad.tobytes())
+        color = tuple(float(c) for c in self.color)
+        self._prog["color"].value = color[:3]
+        self._prog["opacity"].value = float(self.opacity)
+        self._prog["softness"].value = min(max(float(self.softness), 0.0), 1.0)
+        self._prog["edge"].value = 1.0 / max(radius_px, 1.0)
+        set_blend(ctx, self.blend)
+        self._vao.render(moderngl.TRIANGLES)
+        set_blend(ctx, None)
+
+    def close(self):
+        for res in (self._vao, self._vbo, self._prog):
+            if res is not None:
+                res.release()
+        self._prog = self._vbo = self._vao = None
 
 
 class Bars(Geometry):
@@ -93,40 +172,52 @@ def _lattice_hash2(ix, iy):
     return h / 0xFFFFFFFF
 
 
-def _noise2(x, y, t):
-    """2D value noise (smoothstep-interpolated lattice), scrolled over time by `t`."""
+def _noise2(x, y, t, period=None):
+    """2D gradient (Perlin) noise with quintic fade, scrolled over time by `t`.
+
+    Unlike value noise, the lattice carries gradients rather than heights, so the
+    field has no visible axis-aligned grid artefacts. With an integer `period` the
+    lattice repeats every `period` cells in both axes, so the field tiles seamlessly.
+    """
     x = x + t
     x0, y0 = np.floor(x), np.floor(y)
     fx, fy = x - x0, y - y0
-    fx = fx * fx * (3 - 2 * fx)
-    fy = fy * fy * (3 - 2 * fy)
+    u = fx * fx * fx * (fx * (fx * 6 - 15) + 10)
+    v = fy * fy * fy * (fy * (fy * 6 - 15) + 10)
     x0i, y0i = x0.astype(np.int64), y0.astype(np.int64)
     x1i, y1i = x0i + 1, y0i + 1
-    v00 = _lattice_hash2(x0i, y0i)
-    v10 = _lattice_hash2(x1i, y0i)
-    v01 = _lattice_hash2(x0i, y1i)
-    v11 = _lattice_hash2(x1i, y1i)
-    a = v00 + (v10 - v00) * fx
-    b = v01 + (v11 - v01) * fx
-    return a + (b - a) * fy
+    if period:
+        x0i, x1i, y0i, y1i = x0i % period, x1i % period, y0i % period, y1i % period
+
+    def corner(ix, iy, dx, dy):
+        angle = _lattice_hash2(ix, iy) * (2 * np.pi)
+        return np.cos(angle) * dx + np.sin(angle) * dy
+
+    n00 = corner(x0i, y0i, fx, fy)
+    n10 = corner(x1i, y0i, fx - 1, fy)
+    n01 = corner(x0i, y1i, fx, fy - 1)
+    n11 = corner(x1i, y1i, fx - 1, fy - 1)
+    a = n00 + (n10 - n00) * u
+    b = n01 + (n11 - n01) * u
+    return a + (b - a) * v
 
 
-def _curl(x, y, t, eps=0.02):
+def _curl(x, y, t, eps=0.02, period=None):
     """Divergence-free velocity field: the curl (rotated gradient) of a scalar
     noise potential. Unlike reading a direction straight off the noise, this is
     guaranteed to neither converge nor diverge particles over time - the same
     trick curl-noise-based particle systems (Houdini, TouchDesigner, Notch) use
     to keep flow-field particles organically swirling instead of clumping.
     """
-    dpsi_dy = (_noise2(x, y + eps, t) - _noise2(x, y - eps, t)) / (2 * eps)
-    dpsi_dx = (_noise2(x + eps, y, t) - _noise2(x - eps, y, t)) / (2 * eps)
+    dpsi_dy = (_noise2(x, y + eps, t, period) - _noise2(x, y - eps, t, period)) / (2 * eps)
+    dpsi_dx = (_noise2(x + eps, y, t, period) - _noise2(x - eps, y, t, period)) / (2 * eps)
     return dpsi_dy, -dpsi_dx
 
 
 class Particles(Geometry):
     """A pool of particles drifting through a divergence-free curl-noise flow
     field (no clumping, no voids - particles stay spread out indefinitely),
-    rendered as GL_POINTS. `count`, `speed`, `size`, `color`, `turbulence`,
+    rendered as soft round additive sprites. `count`, `speed`, `size`, `color`, `turbulence`,
     and `variation` may all be Signals, e.g.
     `particles.speed = audio.mid.map(0.1, 0.6)`.
     `turbulence` layers in a faster, finer-grained noise octave on top of the
@@ -138,6 +229,7 @@ class Particles(Geometry):
     `variation` (0 = no per-particle variation, same as the default).
     """
 
+    blend = "add"
     count = Param(500)
     speed = Param(0.3)
     size = Param(4.0)
@@ -153,7 +245,10 @@ class Particles(Geometry):
         self.count, self.speed, self.size, self.color, self.turbulence = (
             count, speed, size, color, turbulence
         )
-        self.scale = scale  # spatial frequency of the noise field
+        # The field must tile across the wrapped [-1, 1] domain, so the number of
+        # noise cells spanning it is snapped to an integer (scale = cells / 2).
+        self._period = max(1, round(2.0 * scale))
+        self.scale = self._period / 2.0  # spatial frequency of the noise field
         self.color_by = color_by  # None (default), "speed", or "age"
         self.variation = variation
         self.lifetime = lifetime
@@ -163,16 +258,30 @@ class Particles(Geometry):
         self._age = rng.uniform(0.0, lifetime, size=max_count).astype("f4")
         self._t = 0.0
 
+    def _velocity(self, x, y, t):
+        base_x, base_y = _curl(x * self.scale, y * self.scale, t * 0.1, period=self._period)
+        detail_x, detail_y = _curl(
+            x * self.scale * 3.0, y * self.scale * 3.0, t * 0.3, period=self._period * 3
+        )
+        turbulence = self.turbulence
+        return base_x + turbulence * detail_x, base_y + turbulence * detail_y
+
     def update(self, dt):
         self._t += dt
         x, y = self._pos[:, 0], self._pos[:, 1]
-        base_x, base_y = _curl(x * self.scale, y * self.scale, self._t * 0.1)
-        detail_x, detail_y = _curl(x * self.scale * 3.0, y * self.scale * 3.0, self._t * 0.3)
-        vx = base_x + self.turbulence * detail_x
-        vy = base_y + self.turbulence * detail_y
+        # Midpoint (RK2) integration, subdivided when the step is large relative to
+        # the noise detail: plain Euler spirals particles out of vortex cores and into
+        # clumps, which defeats the point of a divergence-free field.
         step = self.speed * dt
-        self._pos[:, 0] = (x + vx * step + 1.0) % 2.0 - 1.0
-        self._pos[:, 1] = (y + vy * step + 1.0) % 2.0 - 1.0
+        substeps = int(min(4, max(1, np.ceil(abs(step) * (1.0 + abs(self.turbulence)) / 0.02))))
+        step /= substeps
+        px, py = x, y
+        for _ in range(substeps):
+            vx, vy = self._velocity(px, py, self._t)
+            vx, vy = self._velocity(px + vx * step * 0.5, py + vy * step * 0.5, self._t)
+            px, py = px + vx * step, py + vy * step
+        self._pos[:, 0] = (px + 1.0) % 2.0 - 1.0
+        self._pos[:, 1] = (py + 1.0) % 2.0 - 1.0
         self._vel_mag = np.hypot(vx, vy)
         self._age = (self._age + dt) % max(self.lifetime, 1e-6)
 
@@ -195,12 +304,53 @@ class Particles(Geometry):
 
 
 class Output(Node):
-    """Sink: geometries connected with `>>` are rendered by the runner each frame."""
+    """Sink: geometries connected with `>>` are rendered by the runner each frame.
 
-    def __init__(self, background=(0.02, 0.02, 0.03)):
+    Besides the clear colour, an Output carries the post-processing settings
+    (the final "Level / Bloom / Feedback" stage). Every setting may be a Signal,
+    e.g. `Output(bloom=audio.low.map(0.2, 1.2), trails=0.85)`:
+
+        render_scale    supersampling factor for anti-aliasing (1 = native, 2 = 4x samples)
+        bloom           glow intensity; `bloom_threshold` is where glow starts
+        trails          feedback decay (0 = off, ~0.9 = long trails); `trails_zoom` drifts them
+        exposure, contrast, saturation, hue, vignette
+        tonemap         "none", "aces" or "reinhard"
+        palette         list of RGB stops; blended in by `palette_mix` as a gradient map
+        dither          remove 8-bit gradient banding
+    """
+
+    background = Param((0.02, 0.02, 0.03))
+    bloom = Param(DEFAULT_SETTINGS["bloom"])
+    bloom_threshold = Param(DEFAULT_SETTINGS["bloom_threshold"])
+    trails = Param(DEFAULT_SETTINGS["trails"])
+    trails_zoom = Param(DEFAULT_SETTINGS["trails_zoom"])
+    exposure = Param(DEFAULT_SETTINGS["exposure"])
+    contrast = Param(DEFAULT_SETTINGS["contrast"])
+    saturation = Param(DEFAULT_SETTINGS["saturation"])
+    hue = Param(DEFAULT_SETTINGS["hue"])
+    vignette = Param(DEFAULT_SETTINGS["vignette"])
+    palette_mix = Param(DEFAULT_SETTINGS["palette_mix"])
+
+    def __init__(self, background=(0.02, 0.02, 0.03), render_scale=1.0, tonemap="none",
+                 palette=None, dither=True, **post):
         super().__init__()
+        unknown = set(post) - set(DEFAULT_SETTINGS)
+        if unknown:
+            raise TypeError(f"Output got unexpected settings: {sorted(unknown)}")
         self.background = background
+        self.render_scale = render_scale
+        self.tonemap = tonemap
+        self.palette = palette
+        self.dither = dither
+        for key, value in post.items():
+            setattr(self, key, value)
 
     @property
     def layers(self):
         return self.inputs
+
+    def settings(self):
+        """Resolve every post-processing setting to plain numbers for this frame."""
+        values = {key: evaluate(getattr(self, key, default)) for key, default in DEFAULT_SETTINGS.items()}
+        values["render_scale"] = min(max(float(values["render_scale"]), 1.0), 4.0)
+        return values

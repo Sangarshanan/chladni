@@ -10,4 +10,7 @@ pixi run circle_particle
 
 # Run gesture + audio tracking with camera overlay
 pixi run gesture
+
+# Run ISF shaders
+pixi run isf
 ```

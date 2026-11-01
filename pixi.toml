@@ -8,6 +8,7 @@ version = "0.1.0"
 [tasks]
 circle_particle = "python -m src.runner examples/circle_particle.py"
 gesture = "python -m src.runner examples/gesture_run.py"
+isf = "python -m src.runner examples/isf_run.py"
 
 [dependencies]
 python = ">=3.15"

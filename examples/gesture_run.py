@@ -33,8 +33,10 @@ with Pipeline() as pipeline:
     particles.size = audio.high.map(2.0, 6.0)
     particles.turbulence = gesture.openness.map(0.2, 3.0) # openness = calm vs chaotic
 
-    output = Output(background=(0.03, 0.03, 0.05))
-    gesture.overlay >> output
+    output = Output(background=(0.03, 0.03, 0.05), bloom=0.4, bloom_threshold=0.6, render_scale=1.5)
+    camera = gesture.overlay
+    camera.alpha = 0.55                              # let the background show through
+    camera >> output
     circle >> output
     bars >> output
     particles >> output

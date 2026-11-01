@@ -1,7 +1,7 @@
 """
 Background camera capture thread + GestureInput, a Node exposing
-hand-tracking signals as live Signal plus CameraOverlay
-to render the live annotated camera feed directly on the canvas.
+hand-tracking signals as live Signal plus CameraOverlay, which draws the
+full-resolution camera feed and a GPU-rendered hand skeleton on the canvas.
 """
 
 import math
@@ -12,8 +12,9 @@ import urllib.request
 import numpy as np
 
 from .core import Node
-from .signals import Signal
-from .visuals import Geometry
+from .gfx import set_blend, state
+from .signals import Signal, evaluate
+from .visuals import Geometry, Param
 
 import moderngl
 import cv2 as _cv2
@@ -39,10 +40,13 @@ _PINKY_MCP   = 17
 _FINGER_MCPS = [5, 9, 13, 17]   # index, middle, ring, pinky
 _FINGER_TIPS = [8, 12, 16, 20]  # index, middle, ring, pinky
 
-# Target capture dimensions — small enough to be cheap, big enough for hands.
-_FRAME_W = 320
-_FRAME_H = 240
+# Requested capture size (the driver may pick the nearest supported mode).
+_FRAME_W = 1280
+_FRAME_H = 720
 _TARGET_FPS = 30
+# Hand detection runs on a copy whose longest side is this long; landmarks are
+# normalised, so the full-resolution frame is only used for display.
+_DETECT_SIZE = 384
 
 _MODEL_FILENAME = "hand_landmarker.task"
 _MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
@@ -84,38 +88,27 @@ def draw_hand_landmarks(
 
 
 def _draw_hud(img: np.ndarray, gestures: dict | None):
-    """Draw gesture metrics HUD and border directly on the camera frame."""
-    if _cv2 is None:
-        return
+    """Draw gesture metrics HUD directly on a debug frame, scaled to its resolution."""
     h, w = img.shape[:2]
+    k = h / 240.0
+    bar = int(50 * k)
 
-    # Semi-transparent dark banner at bottom for metrics
     overlay = img.copy()
-    _cv2.rectangle(overlay, (0, h - 50), (w, h), (10, 10, 15), -1)
+    _cv2.rectangle(overlay, (0, h - bar), (w, h), (10, 10, 15), -1)
     _cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
 
     if gestures and gestures.get("hand_present", 0.0) > 0.5:
-        p_val = gestures["pinch"]
-        o_val = gestures["openness"]
-        f_val = int(round(gestures["fingers"] * 5))
-        hx, hy = gestures["hand_x"], gestures["hand_y"]
-
-        _cv2.putText(
-            img, f"Pinch: {p_val:.2f}", (10, h - 30),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, _cv2.LINE_AA,
+        font, thick = _cv2.FONT_HERSHEY_SIMPLEX, max(1, round(k))
+        lines = (
+            (f"Pinch: {gestures['pinch']:.2f}", 10, 30, 0.4, (255, 255, 255)),
+            (f"Open: {gestures['openness']:.2f}", 115, 30, 0.4, (255, 255, 255)),
+            (f"Fingers: {int(round(gestures['fingers'] * 5))}/5", 215, 30, 0.4, (255, 255, 255)),
+            (f"Pos: ({gestures['hand_x']:+.2f}, {gestures['hand_y']:+.2f})", 10, 12, 0.38,
+             (180, 180, 180)),
         )
-        _cv2.putText(
-            img, f"Open: {o_val:.2f}", (115, h - 30),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, _cv2.LINE_AA,
-        )
-        _cv2.putText(
-            img, f"Fingers: {f_val}/5", (215, h - 30),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, _cv2.LINE_AA,
-        )
-        _cv2.putText(
-            img, f"Pos: ({hx:+.2f}, {hy:+.2f})", (10, h - 12),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, _cv2.LINE_AA,
-        )
+        for text, x, y_from_bottom, size, color in lines:
+            _cv2.putText(img, text, (int(x * k), h - int(y_from_bottom * k)), font,
+                         size * k, color, thick, _cv2.LINE_AA)
 
 
 def _ensure_model(custom_path=None) -> Path | None:
@@ -223,14 +216,16 @@ _ABSENT = {
 
 
 class _CameraStream:
-    """Capture frames and running MediaPipe Tasks HandLandmarker."""
+    """Capture frames and run the MediaPipe Tasks HandLandmarker on a downscaled copy."""
 
     _instance = None
 
-    def __init__(self, device=0, model_path=None):
+    def __init__(self, device=0, model_path=None, resolution=(_FRAME_W, _FRAME_H)):
         self._lock = threading.Lock()
         self._gestures = dict(_ABSENT)
-        self._latest_annotated = None
+        self._frame = None          # latest full-resolution BGR frame, never annotated
+        self._frame_id = 0
+        self._landmarks = None      # (21, 2) normalised, in mirrored image space
         self._running = True
 
         model_file = _ensure_model(model_path)
@@ -238,6 +233,14 @@ class _CameraStream:
             raise RuntimeError(
                 f"MediaPipe task model '{_MODEL_FILENAME}' not found or could not be loaded."
             )
+
+        cap = _cv2.VideoCapture(device)
+        if not cap.isOpened():
+            raise RuntimeError(f"Could not open camera device {device}")
+        cap.set(_cv2.CAP_PROP_FRAME_WIDTH, resolution[0])
+        cap.set(_cv2.CAP_PROP_FRAME_HEIGHT, resolution[1])
+        cap.set(_cv2.CAP_PROP_FPS, _TARGET_FPS)
+        cap.set(_cv2.CAP_PROP_BUFFERSIZE, 1)
 
         base_options = _mp_python.BaseOptions(model_asset_path=str(model_file))
         options = _mp_vision.HandLandmarkerOptions(
@@ -248,15 +251,11 @@ class _CameraStream:
             min_tracking_confidence=0.5,
             running_mode=_mp_vision.RunningMode.VIDEO,
         )
-        self._landmarker = _mp_vision.HandLandmarker.create_from_options(options)
-
-        cap = _cv2.VideoCapture(device)
-        cap.set(_cv2.CAP_PROP_FRAME_WIDTH, _FRAME_W)
-        cap.set(_cv2.CAP_PROP_FRAME_HEIGHT, _FRAME_H)
-        cap.set(_cv2.CAP_PROP_FPS, _TARGET_FPS)
-        if not cap.isOpened():
-            self._landmarker.close()
-            raise RuntimeError(f"Could not open camera device {device}")
+        try:
+            self._landmarker = _mp_vision.HandLandmarker.create_from_options(options)
+        except Exception:
+            cap.release()
+            raise
 
         self._thread = threading.Thread(
             target=self._loop,
@@ -274,8 +273,20 @@ class _CameraStream:
                 time.sleep(0.01)
                 continue
 
-            frame = _cv2.flip(frame, 1)
-            rgb = _cv2.cvtColor(frame, _cv2.COLOR_BGR2RGB)
+            with self._lock:
+                self._frame = frame
+                self._frame_id += 1
+
+            h, w = frame.shape[:2]
+            scale = _DETECT_SIZE / max(h, w)
+            small = frame
+            if scale < 1.0:
+                small = _cv2.resize(
+                    frame, (max(1, int(w * scale)), max(1, int(h * scale))),
+                    interpolation=_cv2.INTER_AREA,
+                )
+            # Landmarks live in mirrored space so hand_x matches what the user sees.
+            rgb = _cv2.cvtColor(_cv2.flip(small, 1), _cv2.COLOR_BGR2RGB)
             mp_image = _mp.Image(image_format=_mp.ImageFormat.SRGB, data=rgb)
 
             # VIDEO mode requires strictly monotonically increasing timestamps in ms
@@ -290,27 +301,14 @@ class _CameraStream:
             if result.hand_landmarks and len(result.hand_landmarks) > 0:
                 lms = result.hand_landmarks[0]
                 gestures = _compute_gestures(lms)
-                annotated = draw_hand_landmarks(frame, [lms])
-                fh, fw = annotated.shape[:2]
-
-                # Highlight active pinch midpoint using actual frame dimensions
-                if gestures["pinch"] < 0.25:
-                    p_thumb = to_pixel(_lm(lms, _THUMB_TIP)[0], _lm(lms, _THUMB_TIP)[1], fw, fh)
-                    p_index = to_pixel(_lm(lms, _INDEX_TIP)[0], _lm(lms, _INDEX_TIP)[1], fw, fh)
-                    mid_pt = ((p_thumb[0] + p_index[0]) // 2, (p_thumb[1] + p_index[1]) // 2)
-                    _cv2.circle(annotated, mid_pt, 7, (0, 255, 255), -1)
-                    _cv2.circle(annotated, mid_pt, 10, (0, 200, 255), 1)
-                _draw_hud(annotated, gestures)
+                points = np.array([(lm.x, lm.y) for lm in lms], dtype="f4")
             else:
                 gestures = dict(_ABSENT)
-                annotated = frame.copy()
-                _draw_hud(annotated, None)
-
-            annotated_rgb = _cv2.cvtColor(annotated, _cv2.COLOR_BGR2RGB)
+                points = None
 
             with self._lock:
                 self._gestures = gestures
-                self._latest_annotated = annotated_rgb
+                self._landmarks = points
 
         cap.release()
         try:
@@ -322,17 +320,37 @@ class _CameraStream:
         with self._lock:
             return dict(self._gestures)
 
-    def read_annotated_frame(self):
+    def read_frame(self):
+        """Return (frame_id, BGR frame or None, landmarks or None) without copying."""
         with self._lock:
-            return self._latest_annotated.copy() if self._latest_annotated is not None else None
+            return self._frame_id, self._frame, self._landmarks
+
+    def read_annotated_frame(self):
+        """Build an RGB debug image (mirrored, skeleton and HUD burned in) for `show_window`."""
+        with self._lock:
+            frame = self._frame
+            points = self._landmarks
+            gestures = dict(self._gestures)
+        if frame is None:
+            return None
+        annotated = _cv2.flip(frame, 1)
+        h, w = annotated.shape[:2]
+        k = max(1, round(h / 360))
+        if points is not None:
+            lms = [type("P", (), {"x": float(x), "y": float(y)})() for x, y in points]
+            annotated = draw_hand_landmarks(
+                annotated, [lms], point_radius=3 * k, line_thickness=2 * k
+            )
+        _draw_hud(annotated, gestures)
+        return _cv2.cvtColor(annotated, _cv2.COLOR_BGR2RGB)
 
     def stop(self):
         self._running = False
 
     @classmethod
-    def instance(cls, device=0, model_path=None):
+    def instance(cls, device=0, model_path=None, resolution=(_FRAME_W, _FRAME_H)):
         if cls._instance is None:
-            cls._instance = cls(device=device, model_path=model_path)
+            cls._instance = cls(device=device, model_path=model_path, resolution=resolution)
         return cls._instance
 
 
@@ -369,15 +387,19 @@ class GestureInput(Node):
         gesture.overlay >> output
     """
 
-    def __init__(self, device=0, smoothing=0.08, model_path=None, show_window=False):
+    def __init__(self, device=0, smoothing=0.08, model_path=None, show_window=False,
+                 resolution=(_FRAME_W, _FRAME_H)):
+        # Open the camera before registering with the pipeline, so a failure leaves
+        # no half-built node behind.
+        self._stream = _CameraStream.instance(
+            device=device, model_path=model_path, resolution=resolution
+        )
         super().__init__()
         self.smoothing = smoothing
         self.model_path = model_path
         self.show_window = show_window
         self._values = dict(_ABSENT)
         self._overlay_node = None
-
-        self._stream = _CameraStream.instance(device=device, model_path=model_path)
 
         self.hand_x       = _GestureSignal(self, "hand_x")
         self.hand_y       = _GestureSignal(self, "hand_y")
@@ -388,7 +410,7 @@ class GestureInput(Node):
 
     @property
     def overlay(self):
-        """Return a CameraOverlay node showing this gesture feed in a corner PiP."""
+        """Return a CameraOverlay node showing this gesture feed."""
         if self._overlay_node is None:
             self._overlay_node = CameraOverlay(self)
         return self._overlay_node
@@ -396,6 +418,10 @@ class GestureInput(Node):
     def get_annotated_frame(self):
         """Return the latest RGB camera frame annotated with landmarks and HUD."""
         return self._stream.read_annotated_frame()
+
+    def read_camera(self):
+        """Return (frame_id, BGR frame, landmarks) for the newest full-resolution frame."""
+        return self._stream.read_frame()
 
     def update(self, dt):
         raw = self._stream.read()
@@ -417,23 +443,76 @@ class GestureInput(Node):
                 _cv2.waitKey(1)
 
 
+_OVERLAY_VERTEX = """
+#version 330
+in vec2 in_pos;
+in vec2 in_uv;
+out vec2 v_uv;
+void main() {
+    gl_Position = vec4(in_pos, 0.0, 1.0);
+    v_uv = in_uv;
+}
+"""
+
+_OVERLAY_FRAGMENT = """
+#version 330
+uniform sampler2D tex;
+uniform float alpha;
+uniform vec2 uv_scale;
+uniform bool mirror;
+uniform float brightness;
+uniform float contrast;
+uniform float saturation;
+in vec2 v_uv;
+out vec4 f_color;
+void main() {
+    vec2 uv = (v_uv - 0.5) * uv_scale + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
+    if (mirror) uv.x = 1.0 - uv.x;
+    vec3 c = texture(tex, uv).rgb;
+    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = mix(vec3(luma), c, saturation);
+    c = (c - 0.5) * contrast + 0.5;
+    c = max(c * brightness, 0.0);
+    f_color = vec4(c * alpha, alpha);
+}
+"""
+
+
 class CameraOverlay(Geometry):
-    """Picture-in-picture camera feed with live hand-tracking skeleton and gesture HUD.
+    """Camera feed (at the camera's full resolution) with a GPU-drawn hand skeleton.
 
     Connect with >> to route into Output:
         camera = CameraOverlay(gesture)
         camera >> output
         # or simply:
         gesture.overlay >> output
+
+    `fit` is "cover" (fill, cropping), "contain" (letterbox) or "stretch". `x`, `y`,
+    `width`, `height` give the NDC rectangle, so a picture-in-picture inset is
+    `CameraOverlay(g, x=0.4, y=0.4, width=0.55, height=0.55, fit="cover")`. `alpha`,
+    `brightness`, `contrast` and `saturation` may be Signals.
     """
+
+    alpha = Param(1.0)
+    brightness = Param(1.0)
+    contrast = Param(1.0)
+    saturation = Param(1.0)
 
     def __init__(
         self, gesture: GestureInput,
-        alpha = 0.3,
+        alpha=1.0,
         x=-1,
         y=-1,
         width=2,
         height=2,
+        fit="cover",
+        mirror=True,
+        skeleton=True,
+        skeleton_color=(0.25, 1.0, 0.65),
+        brightness=1.0,
+        contrast=1.0,
+        saturation=1.0,
     ):
         super().__init__()
         self.gesture = gesture
@@ -442,38 +521,38 @@ class CameraOverlay(Geometry):
         self.y = y
         self.width = width
         self.height = height
+        self.fit = fit
+        self.mirror = mirror
+        self.skeleton = skeleton
+        self.skeleton_color = skeleton_color
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
         self._tex = None
         self._prog = None
         self._vbo = None
         self._vao = None
         self._bounds = None
+        self._frame_id = -1
+
+    def _uv_scale(self, frame_w, frame_h, rect_aspect):
+        frame_aspect = frame_w / frame_h
+        if self.fit == "stretch":
+            return 1.0, 1.0
+        wide = frame_aspect > rect_aspect
+        if self.fit == "contain":
+            return (1.0, frame_aspect / rect_aspect) if wide else (rect_aspect / frame_aspect, 1.0)
+        return (rect_aspect / frame_aspect, 1.0) if wide else (1.0, frame_aspect / rect_aspect)
 
     def render(self, ctx):
-        """Render the camera frame and HUD into the ModernGL viewport."""
-        frame = self.gesture.get_annotated_frame()
+        """Render the camera frame and skeleton into the current framebuffer."""
+        frame_id, frame, landmarks = self.gesture.read_camera()
         if frame is None:
             return
 
         h, w = frame.shape[:2]
         if self._prog is None:
-            self._prog = ctx.program(
-                vertex_shader="""#version 330
-                in vec2 in_pos;
-                in vec2 in_uv;
-                out vec2 v_uv;
-                void main() {
-                    gl_Position = vec4(in_pos, 0.0, 1.0);
-                    v_uv = in_uv;
-                }""",
-                fragment_shader="""#version 330
-                uniform sampler2D tex;
-                uniform float alpha;
-                in vec2 v_uv;
-                out vec4 f_color;
-                void main() {
-                    f_color = vec4(texture(tex, v_uv).rgb * alpha, 1);
-                }""",
-            )
+            self._prog = ctx.program(vertex_shader=_OVERLAY_VERTEX, fragment_shader=_OVERLAY_FRAGMENT)
             self._vbo = ctx.buffer(reserve=24 * 4, dynamic=True)
             self._vao = ctx.vertex_array(self._prog, [(self._vbo, "2f 2f", "in_pos", "in_uv")])
 
@@ -481,8 +560,19 @@ class CameraOverlay(Geometry):
             if self._tex is not None:
                 self._tex.release()
             self._tex = ctx.texture((w, h), 3)
+            self._tex.swizzle = "BGR1"  # frames arrive as BGR; no CPU colour conversion
+            self._tex.repeat_x = self._tex.repeat_y = False
+            self._tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+            self._tex.anisotropy = 4.0
+            self._frame_id = -1
 
-        bounds = (float(self.x), float(self.y), float(self.width), float(self.height))
+        if frame_id != self._frame_id:
+            self._frame_id = frame_id
+            self._tex.write(np.ascontiguousarray(frame), alignment=1)
+            self._tex.build_mipmaps()
+
+        bounds = (float(evaluate(self.x)), float(evaluate(self.y)),
+                  float(evaluate(self.width)), float(evaluate(self.height)))
         if self._bounds != bounds:
             self._bounds = bounds
             x0, y0, bw, bh = bounds
@@ -498,11 +588,55 @@ class CameraOverlay(Geometry):
             ], dtype="f4")
             self._vbo.write(quad.tobytes())
 
-        self._tex.write(frame.tobytes())
+        fb_w, fb_h = ctx.fbo.size
+        x0, y0, bw, bh = bounds
+        rect_aspect = (abs(bw) * fb_w) / max(abs(bh) * fb_h, 1e-6)
+        sx, sy = self._uv_scale(w, h, rect_aspect)
+
         self._tex.use(0)
         self._prog["tex"].value = 0
-        self._prog["alpha"].value = self.alpha
+        self._prog["alpha"].value = float(self.alpha)
+        self._prog["uv_scale"].value = (sx, sy)
+        self._prog["mirror"].value = bool(self.mirror)
+        self._prog["brightness"].value = float(self.brightness)
+        self._prog["contrast"].value = float(self.contrast)
+        self._prog["saturation"].value = float(self.saturation)
+        set_blend(ctx, "alpha")
         self._vao.render(moderngl.TRIANGLES)
+
+        if self.skeleton and landmarks is not None:
+            self._draw_skeleton(ctx, landmarks, bounds, (sx, sy), (fb_w, fb_h))
+        set_blend(ctx, None)
+
+    def _draw_skeleton(self, ctx, landmarks, bounds, scale, fb_size):
+        """Draw bones as thick quads and joints as soft points, at the framebuffer's resolution."""
+        gfx = state(ctx)
+        x0, y0, bw, bh = bounds
+        sx, sy = scale
+        u = landmarks[:, 0] if self.mirror else 1.0 - landmarks[:, 0]
+        v = landmarks[:, 1]
+        ru = (u - 0.5) / sx + 0.5
+        rv = (v - 0.5) / sy + 0.5
+        ndc = np.stack([x0 + ru * bw, y0 + (1.0 - rv) * bh], axis=1)
+        half = np.array(fb_size, dtype="f4") / 2.0
+        pix = (ndc + 1.0) * half
+
+        a = np.array([c[0] for c in HAND_CONNECTIONS])
+        b = np.array([c[1] for c in HAND_CONNECTIONS])
+        d = pix[b] - pix[a]
+        length = np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-6)
+        normal = np.stack([-d[:, 1], d[:, 0]], axis=1) / length
+        offset = normal * (2.0 * gfx.pixel_scale)
+        p0, p1 = pix[a], pix[b]
+        quads = np.stack([p0 - offset, p0 + offset, p1 + offset,
+                          p0 - offset, p1 + offset, p1 - offset], axis=1).reshape(-1, 2)
+        quads = quads / half - 1.0
+
+        color = np.array(self.skeleton_color, dtype="f4")
+        gfx.draw.draw(quads.astype("f4"), np.tile(color, (len(quads), 1)), "triangles")
+        joints = ndc.astype("f4")
+        gfx.draw.draw(joints, np.tile(np.array([1.0, 0.35, 0.3], dtype="f4"), (len(joints), 1)),
+                      "points", size=9.0, pixel_scale=gfx.pixel_scale)
 
     def close(self):
         """Release ModernGL GPU resources when pipeline hot-reloads."""

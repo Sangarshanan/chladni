@@ -1,5 +1,5 @@
 """
-Background PortAudio input stream
+Background PortAudio input stream, band analysis, and auto-ranged AudioBands signals.
 """
 
 import math
@@ -13,20 +13,28 @@ from .signals import Signal
 
 # (name, low_hz, high_hz)
 _BANDS = (("low", 20, 250), ("mid", 250, 2000), ("high", 2000, 8000))
+_FLOOR_DB = -100.0
 
 
 class _AudioStream:
-    """Input stream computing low/mid/high band energy."""
+    """Input stream reporting per-band energy in dB (0 dB = a full-scale sine).
+
+    The FFT window (`fft_size`) is longer than the callback block, so low-frequency
+    bands get fine resolution without adding latency.
+    """
 
     _instance = None
 
-    def __init__(self, samplerate=44100, blocksize=1024, device=None):
+    def __init__(self, samplerate=44100, blocksize=1024, fft_size=4096, device=None):
         self.samplerate = samplerate
         self._lock = threading.Lock()
-        self._bands = {"low": 0.0, "mid": 0.0, "high": 0.0}
-        freqs = np.fft.rfftfreq(blocksize, 1.0 / samplerate)
+        self._db = {name: _FLOOR_DB for name, _, _ in _BANDS}
+        self._db["level"] = _FLOOR_DB
+        freqs = np.fft.rfftfreq(fft_size, 1.0 / samplerate)
         self._masks = {name: (freqs >= lo) & (freqs < hi) for name, lo, hi in _BANDS}
-        self._window = np.hanning(blocksize)
+        self._window = np.hanning(fft_size)
+        self._scale = 2.0 / self._window.sum()  # a full-scale sine peaks at 1.0
+        self._ring = np.zeros(fft_size, dtype="f4")
         self._stream = sd.InputStream(
             samplerate=samplerate,
             blocksize=blocksize,
@@ -37,17 +45,23 @@ class _AudioStream:
         self._stream.start()
 
     def _callback(self, indata, frames, time_info, status):
-        spectrum = np.abs(np.fft.rfft(indata[:, 0] * self._window))
-        bands = {}
+        block = indata[:, 0]
+        n = min(len(block), len(self._ring))
+        self._ring = np.roll(self._ring, -n)
+        self._ring[-n:] = block[-n:]
+        spectrum = np.abs(np.fft.rfft(self._ring * self._window)) * self._scale
+        power = spectrum * spectrum / 2.0  # per-bin power of the equivalent sine
+        db = {}
         for name, mask in self._masks.items():
-            magnitude = spectrum[mask].mean() if mask.any() else 0.0
-            bands[name] = float(np.clip(np.log1p(magnitude) / 8.0, 0.0, 1.0))
+            db[name] = 10.0 * math.log10(float(power[mask].sum()) + 1e-10)
+        rms = float(np.sqrt(np.mean(np.square(block)))) if len(block) else 0.0
+        db["level"] = 20.0 * math.log10(rms + 1e-5)
         with self._lock:
-            self._bands = bands
+            self._db = db
 
     def read(self):
         with self._lock:
-            return self._bands
+            return dict(self._db)
 
     @classmethod
     def instance(cls, **kwargs):
@@ -67,21 +81,81 @@ class _Band(Signal):
         return self._owner._values[self._name]
 
 
-class AudioBands(Node):
-    """Exposes `.low`, `.mid`, `.high` as live Signals from the default input device."""
+class _Tracker:
+    """Auto-ranging for one band, like Analyze + Math (range) in a CHOP network.
 
-    def __init__(self, samplerate=44100, blocksize=1024, smoothing=0.1, device=None):
-        super().__init__()
+    `hi` follows the loudest recent level and decays slowly (never below
+    `min_peak_db`); `lo` follows the quietest level and creeps up slowly (never
+    below `floor_db`). The band is scaled to 0..1 across that span, which is at
+    least `min_range_db` wide, so steady room noise settles to 0 and silence
+    never gets amplified.
+    """
+
+    def __init__(self, floor_db, min_range_db, min_peak_db, hi_fall_db_s, lo_rise_db_s):
+        self.floor = floor_db
+        self.min_range = min_range_db
+        self.min_peak = min_peak_db
+        self.hi_fall = hi_fall_db_s
+        self.lo_rise = lo_rise_db_s
+        self.lo = None  # seeded from the first reading, which is assumed to be room noise
+        self.hi = max(floor_db + min_range_db, min_peak_db)
+
+    def normalise(self, db, dt):
+        if self.lo is None:
+            self.lo = max(db, self.floor)
+        self.lo = max(min(db, self.lo + self.lo_rise * dt), self.floor)
+        self.hi = max(db, self.hi - self.hi_fall * dt, self.min_peak)
+        return (db - self.lo) / max(self.hi - self.lo, self.min_range)
+
+
+class AudioBands(Node):
+    """Exposes `.low`, `.mid`, `.high` and overall `.level` as live Signals in 0..1.
+
+    Levels are measured in dB and auto-ranged per band (`auto_gain`), so the same
+    patch reacts sensibly to a quiet microphone or a loud line input. Disable it
+    to use a fixed `floor_db`..0 dB range instead. `gain` scales the final value,
+    `gate` suppresses the bottom of the range, and `attack` / `release` (seconds)
+    shape how quickly values rise and fall, like the Lag CHOP.
+    """
+
+    def __init__(self, samplerate=44100, blocksize=1024, smoothing=None, device=None,
+                 attack=0.03, release=0.25, auto_gain=True, gain=1.0, gate=0.05,
+                 floor_db=-70.0, min_range_db=25.0, min_peak_db=-45.0, peak_fall_db_s=2.0,
+                 floor_rise_db_s=0.5):
         self._stream = _AudioStream.instance(
             samplerate=samplerate, blocksize=blocksize, device=device
         )
-        self.smoothing = smoothing
-        self._values = {"low": 0.0, "mid": 0.0, "high": 0.0}
+        super().__init__()
+        self.attack = attack
+        self.release = release if smoothing is None else smoothing  # `smoothing` is the old name
+        self.auto_gain = auto_gain
+        self.gain = gain
+        self.gate = gate
+        self.floor_db = floor_db
+        self._trackers = {
+            name: _Tracker(floor_db, min_range_db, min_peak_db, peak_fall_db_s, floor_rise_db_s)
+            for name in ("low", "mid", "high", "level")
+        }
+        self._values = {name: 0.0 for name in self._trackers}
         self.low = _Band(self, "low")
         self.mid = _Band(self, "mid")
         self.high = _Band(self, "high")
+        self.level = _Band(self, "level")
+
+    def _normalise(self, name, db, dt):
+        if self.auto_gain:
+            value = self._trackers[name].normalise(db, dt)
+        else:
+            value = (db - self.floor_db) / (0.0 - self.floor_db)
+        value = value * self.gain
+        gate = min(max(self.gate, 0.0), 0.95)
+        value = (value - gate) / (1.0 - gate)
+        return min(max(value, 0.0), 1.0)
 
     def update(self, dt):
-        alpha = 1.0 - math.exp(-dt / max(self.smoothing, 1e-6))
-        for name, target in self._stream.read().items():
-            self._values[name] += (target - self._values[name]) * alpha
+        for name, db in self._stream.read().items():
+            target = self._normalise(name, db, dt)
+            current = self._values[name]
+            lag = self.attack if target > current else self.release
+            alpha = 1.0 - math.exp(-dt / max(lag, 1e-4))
+            self._values[name] = current + (target - current) * alpha
