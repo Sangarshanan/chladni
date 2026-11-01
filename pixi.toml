@@ -1,0 +1,21 @@
+[workspace]
+authors = ["sangarshanan <sangarshanan@gmail.com>"]
+channels = ["conda-forge"]
+name = "chladni"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+circle_particle = "python -m src.runner examples/circle_particle.py"
+gesture = "python -m src.runner examples/gesture_run.py"
+
+[dependencies]
+python = ">=3.15"
+numpy = "==2.5.4"
+moderngl = "==5.13.0"
+pyglfw = "==2.11.0"
+python-sounddevice = "==0.5.6"
+opencv = "==5.0.0"
+
+[pypi-dependencies]
+mediapipe = "==1.2.0"

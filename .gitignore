@@ -1,0 +1,12 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+*.venv
+*.pixi
+
+# python
+__pycache__/
+*.pyc
+
+# models
+*.task
