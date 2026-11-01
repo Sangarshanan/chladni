@@ -93,14 +93,7 @@ def _draw_hud(img: np.ndarray, gestures: dict | None):
     _cv2.rectangle(overlay, (0, h - 50), (w, h), (10, 10, 15), -1)
     _cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
 
-    # Frame border (cyan)
-    _cv2.rectangle(img, (0, 0), (w - 1, h - 1), (0, 220, 255), 2)
-
     if gestures and gestures.get("hand_present", 0.0) > 0.5:
-        _cv2.putText(
-            img, "TRACKING: HAND DETECTED", (10, 20),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, _cv2.LINE_AA,
-        )
         p_val = gestures["pinch"]
         o_val = gestures["openness"]
         f_val = int(round(gestures["fingers"] * 5))
@@ -121,15 +114,6 @@ def _draw_hud(img: np.ndarray, gestures: dict | None):
         _cv2.putText(
             img, f"Pos: ({hx:+.2f}, {hy:+.2f})", (10, h - 12),
             _cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, _cv2.LINE_AA,
-        )
-    else:
-        _cv2.putText(
-            img, "SEARCHING FOR HAND...", (10, 20),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1, _cv2.LINE_AA,
-        )
-        _cv2.putText(
-            img, "Position hand in view to track gestures", (10, h - 22),
-            _cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 160), 1, _cv2.LINE_AA,
         )
 
 
@@ -392,12 +376,7 @@ class GestureInput(Node):
         self._values = dict(_ABSENT)
         self._overlay_node = None
 
-        try:
-            self._stream = _CameraStream.instance(device=device, model_path=model_path)
-        except Exception as e:
-            print(f"[chladni] GestureInput: {e}. All signals will be 0.0.")
-            self._stream = None
-            self._available = False
+        self._stream = _CameraStream.instance(device=device, model_path=model_path)
 
         self.hand_x       = _GestureSignal(self, "hand_x")
         self.hand_y       = _GestureSignal(self, "hand_y")
@@ -415,13 +394,9 @@ class GestureInput(Node):
 
     def get_annotated_frame(self):
         """Return the latest RGB camera frame annotated with landmarks and HUD."""
-        if not self._available or self._stream is None:
-            return None
         return self._stream.read_annotated_frame()
 
     def update(self, dt):
-        if not self._available or self._stream is None:
-            return
         raw = self._stream.read()
         alpha = 1.0 - math.exp(-dt / max(self.smoothing, 1e-6))
 
@@ -451,9 +426,17 @@ class CameraOverlay(Geometry):
         gesture.overlay >> output
     """
 
-    def __init__(self, gesture: GestureInput, x=0.41, y=0.55, width=0.55, height=0.4125):
+    def __init__(
+        self, gesture: GestureInput,
+        alpha = 0.3,
+        x=-1,
+        y=-1,
+        width=2,
+        height=2,
+    ):
         super().__init__()
         self.gesture = gesture
+        self.alpha = alpha
         self.x = x
         self.y = y
         self.width = width
@@ -483,10 +466,11 @@ class CameraOverlay(Geometry):
                 }""",
                 fragment_shader="""#version 330
                 uniform sampler2D tex;
+                uniform float alpha;
                 in vec2 v_uv;
                 out vec4 f_color;
                 void main() {
-                    f_color = texture(tex, v_uv);
+                    f_color = vec4(texture(tex, v_uv).rgb * alpha, 1);
                 }""",
             )
             self._vbo = ctx.buffer(reserve=24 * 4, dynamic=True)
@@ -516,6 +500,7 @@ class CameraOverlay(Geometry):
         self._tex.write(frame.tobytes())
         self._tex.use(0)
         self._prog["tex"].value = 0
+        self._prog["alpha"].value = self.alpha
         self._vao.render(moderngl.TRIANGLES)
 
     def close(self):

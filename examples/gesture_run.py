@@ -34,7 +34,7 @@ with Pipeline() as pipeline:
     particles.turbulence = gesture.openness.map(0.2, 3.0) # openness = calm vs chaotic
 
     output = Output(background=(0.03, 0.03, 0.05))
+    gesture.overlay >> output
     circle >> output
     bars >> output
     particles >> output
-    gesture.overlay >> output
