@@ -1,6 +1,6 @@
 """
-ModernGL window that executes `run.py` to build a `Pipeline`, renders it
-every frame, and hot-reloads the script whenever its file changes on disk.
+ModernGL window that executes the script, renders the visuals 
+and hot-reloads the script whenever its file changes on disk.
 """
 
 import argparse
@@ -103,8 +103,6 @@ class Runner:
                     key = (id(geometry), str(exc))
                     if key not in self._reported:
                         self._reported.add(key)
-                        print(f"[chladni] {type(geometry).__name__} failed to render "
-                              f"(layer skipped until the next reload):\n{traceback.format_exc()}")
 
     def run(self, max_frames=None, screenshot=None):
         if not glfw.init():

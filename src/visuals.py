@@ -31,11 +31,7 @@ class Param:
 
 
 class Geometry(Node):
-    """Base for drawable shapes. Subclasses implement `vertices()` (or a custom `render(ctx)`).
-
-    `blend` selects compositing ("alpha", "add", "screen" or "replace") and
-    `opacity` scales the layer's contribution.
-    """
+    """Base for drawable shapes. Subclasses implement `vertices()` (or a custom `render(ctx)`)."""
 
     blend = "alpha"
     opacity = Param(1.0)
@@ -75,10 +71,8 @@ void main() {
 
 
 class Circle(Geometry):
-    """An anti-aliased disc. `x`, `y`, `radius`, `color` and `softness` may be Signals.
-
-    `radius` is in NDC units of the window height, so the circle stays round at any
-    aspect ratio. `softness` feathers the rim (0 = crisp, 1 = fully radial falloff).
+    """
+    An anti-aliased disc. `x`, `y`, `radius`, `color` and `softness` may be Signals.
     """
 
     x = Param(0.0)
@@ -173,11 +167,8 @@ def _lattice_hash2(ix, iy):
 
 
 def _noise2(x, y, t, period=None):
-    """2D gradient (Perlin) noise with quintic fade, scrolled over time by `t`.
-
-    Unlike value noise, the lattice carries gradients rather than heights, so the
-    field has no visible axis-aligned grid artefacts. With an integer `period` the
-    lattice repeats every `period` cells in both axes, so the field tiles seamlessly.
+    """
+    2D gradient (Perlin) noise with quintic fade, scrolled over time by `t`.
     """
     x = x + t
     x0, y0 = np.floor(x), np.floor(y)
@@ -203,11 +194,10 @@ def _noise2(x, y, t, period=None):
 
 
 def _curl(x, y, t, eps=0.02, period=None):
-    """Divergence-free velocity field: the curl (rotated gradient) of a scalar
-    noise potential. Unlike reading a direction straight off the noise, this is
-    guaranteed to neither converge nor diverge particles over time - the same
-    trick curl-noise-based particle systems (Houdini, TouchDesigner, Notch) use
-    to keep flow-field particles organically swirling instead of clumping.
+    """
+    Divergence-free velocity field
+
+    https://www.youtube.com/watch?v=rB83DpBJQsE
     """
     dpsi_dy = (_noise2(x, y + eps, t, period) - _noise2(x, y - eps, t, period)) / (2 * eps)
     dpsi_dx = (_noise2(x + eps, y, t, period) - _noise2(x - eps, y, t, period)) / (2 * eps)
@@ -215,18 +205,8 @@ def _curl(x, y, t, eps=0.02, period=None):
 
 
 class Particles(Geometry):
-    """A pool of particles drifting through a divergence-free curl-noise flow
-    field (no clumping, no voids - particles stay spread out indefinitely),
-    rendered as soft round additive sprites. `count`, `speed`, `size`, `color`, `turbulence`,
-    and `variation` may all be Signals, e.g.
-    `particles.speed = audio.mid.map(0.1, 0.6)`.
-    `turbulence` layers in a faster, finer-grained noise octave on top of the
-    base flow (0 = smooth swirl, higher = more chaotic detail).
-
-    By default every particle is the single `color`. Set `color_by="speed"`
-    or `color_by="age"` to instead brighten/dim each particle individually by
-    its current flow speed or its position in its `lifetime` cycle, scaled by
-    `variation` (0 = no per-particle variation, same as the default).
+    """
+    A pool of particles drifting through a divergence-free curl-noise flow
     """
 
     blend = "add"

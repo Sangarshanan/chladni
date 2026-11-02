@@ -389,8 +389,6 @@ class GestureInput(Node):
 
     def __init__(self, device=0, smoothing=0.08, model_path=None, show_window=False,
                  resolution=(_FRAME_W, _FRAME_H)):
-        # Open the camera before registering with the pipeline, so a failure leaves
-        # no half-built node behind.
         self._stream = _CameraStream.instance(
             device=device, model_path=model_path, resolution=resolution
         )
@@ -480,18 +478,14 @@ void main() {
 
 
 class CameraOverlay(Geometry):
-    """Camera feed (at the camera's full resolution) with a GPU-drawn hand skeleton.
+    """
+    Camera feed (at the camera's full resolution) with a GPU-drawn hand skeleton.
 
     Connect with >> to route into Output:
         camera = CameraOverlay(gesture)
         camera >> output
         # or simply:
         gesture.overlay >> output
-
-    `fit` is "cover" (fill, cropping), "contain" (letterbox) or "stretch". `x`, `y`,
-    `width`, `height` give the NDC rectangle, so a picture-in-picture inset is
-    `CameraOverlay(g, x=0.4, y=0.4, width=0.55, height=0.55, fit="cover")`. `alpha`,
-    `brightness`, `contrast` and `saturation` may be Signals.
     """
 
     alpha = Param(1.0)

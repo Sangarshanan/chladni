@@ -1,4 +1,5 @@
-"""Example patch: edit and save this file while the window is open to see
+"""
+Example patch: edit and save this file while the window is open to see
 changes live. The runner hot-reloads whenever `run.py` changes on disk.
 """
 
@@ -27,6 +28,7 @@ with Pipeline() as pipeline:
     particles.turbulence = jitter
 
     output = Output(background=(0.26, 0.1, 0.02), bloom=0.5, bloom_threshold=0.6, render_scale=1.5)
+
     circle >> output
     bars >> output
     particles >> output

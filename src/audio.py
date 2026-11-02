@@ -11,16 +11,13 @@ import sounddevice as sd
 from .core import Node
 from .signals import Signal
 
-# (name, low_hz, high_hz)
 _BANDS = (("low", 20, 250), ("mid", 250, 2000), ("high", 2000, 8000))
 _FLOOR_DB = -100.0
 
 
 class _AudioStream:
-    """Input stream reporting per-band energy in dB (0 dB = a full-scale sine).
-
-    The FFT window (`fft_size`) is longer than the callback block, so low-frequency
-    bands get fine resolution without adding latency.
+    """
+    Input stream reporting per-band energy in dB.
     """
 
     _instance = None
@@ -82,14 +79,6 @@ class _Band(Signal):
 
 
 class _Tracker:
-    """Auto-ranging for one band, like Analyze + Math (range) in a CHOP network.
-
-    `hi` follows the loudest recent level and decays slowly (never below
-    `min_peak_db`); `lo` follows the quietest level and creeps up slowly (never
-    below `floor_db`). The band is scaled to 0..1 across that span, which is at
-    least `min_range_db` wide, so steady room noise settles to 0 and silence
-    never gets amplified.
-    """
 
     def __init__(self, floor_db, min_range_db, min_peak_db, hi_fall_db_s, lo_rise_db_s):
         self.floor = floor_db
@@ -109,13 +98,8 @@ class _Tracker:
 
 
 class AudioBands(Node):
-    """Exposes `.low`, `.mid`, `.high` and overall `.level` as live Signals in 0..1.
-
-    Levels are measured in dB and auto-ranged per band (`auto_gain`), so the same
-    patch reacts sensibly to a quiet microphone or a loud line input. Disable it
-    to use a fixed `floor_db`..0 dB range instead. `gain` scales the final value,
-    `gate` suppresses the bottom of the range, and `attack` / `release` (seconds)
-    shape how quickly values rise and fall, like the Lag CHOP.
+    """
+    Exposes `.low`, `.mid`, `.high` and overall `.level` as live Signals in 0..1.
     """
 
     def __init__(self, samplerate=44100, blocksize=1024, smoothing=None, device=None,
