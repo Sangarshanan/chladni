@@ -1,7 +1,7 @@
-<h1 align="center">chladni aka chutney</h1>
+<h1 align="center">Chladni aka Chutney</h1>
 
 <p align="center">
-  <em>Chladni or as I like to call it Chutney, is a Python based creative coding toolkit named after Ernst Chladni. It allows live-coded visuals that react in real time to audio and gestures.</em>
+  <em>Chladni or as I like to call it Chutney, is a Python based visual generated named after Ernst Chladni. Live code visuals that react in real time to audio and gestures.</em>
 </p>
 
 ---
@@ -16,6 +16,10 @@
 </p>
 
 ---
+
+Chutney draws a lot of inspiration from [TouchDesigner](https://derivative.ca/) and [Hydra](https://hydra.ojack.xyz/), trying to make something that natively uses Python so it can be easily modified and extended locally. I chose a local Python environment rather than the browser because I feel that audio routing is much easier to handle, and the application runs much faster when integrating local ML models for more interesting experiments. It is heavily inspired by the node-based structure of TD, allowing workflows to be defined like a DAG (shoutout to [Airflow](https://airflow.apache.org/)) and modified in real time.
+
+If something looks like slop and reads like slop, it is slop my brother.
 
 ## Quickstart
 
