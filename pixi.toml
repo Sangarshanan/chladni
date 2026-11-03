@@ -6,8 +6,12 @@ platforms = ["osx-arm64"]
 version = "0.1.0"
 
 [tasks]
-circle_particle = "python -m src.runner examples/circle_particle.py"
-isf = "python -m src.runner examples/shader.py"
+circle_particle = "python -m src.runner examples/1_audioreactive_circle_particles.py"
+camera_effects = "python -m src.runner examples/2_gesture_camera_effects.py"
+audioreactive_tunnel = "python -m src.runner examples/3_audioreactive_tunnel.py"
+camera_filters = "python -m src.runner examples/4_gesture_camera_isf_filters.py"
+kaleidoscope = "python -m src.runner examples/5_audioreactive_kaleidoscope.py"
+shader = "python -m src.runner examples/6_shader_audio_gesture.py"
 
 [dependencies]
 python = ">=3.15"

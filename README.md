@@ -1,7 +1,7 @@
 <h1 align="center">Chladni aka Chutney</h1>
 
 <p align="center">
-  <em>Chladni or as I like to call it Chutney, is a Python based visual generated named after Ernst Chladni. Live code visuals that react in real time to audio and gestures.</em>
+  <em>Chladni or as I like to call it Chutney, is a Python based visual generated named after Ernst Chladni. It helps live code visuals that react to audio and gestures.</em>
 </p>
 
 ---
@@ -45,7 +45,7 @@ pixi install
 pixi run circle_particle
 
 # Run gesture + audio-driven ISF shader over camera feed
-pixi run isf
+pixi run shader
 ```
 
 You can also run any patch directly with the hot-reloading runner:

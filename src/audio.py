@@ -11,7 +11,7 @@ import sounddevice as sd
 from .core import Node
 from .signals import Signal
 
-_BANDS = (("low", 20, 250), ("mid", 250, 2000), ("high", 2000, 8000))
+_BANDS = (("low", 20, 250), ("mid", 250, 2000), ("high", 2000, 15000))
 _FLOOR_DB = -100.0
 
 

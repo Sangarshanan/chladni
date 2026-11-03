@@ -2,7 +2,7 @@
 ISF ColorDiffusionFlow driven by audio and hand gestures over a live camera feed.
 """
 
-from src import Pipeline, AudioBands, GestureInput, CameraOverlay, ISFGenerator, Output
+from src import Pipeline, AudioBands, GestureInput, ISFGenerator, Output
 
 with Pipeline() as pipeline:
     audio = AudioBands()

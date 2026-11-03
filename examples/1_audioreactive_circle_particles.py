@@ -1,6 +1,5 @@
 """
-Example patch: edit and save this file while the window is open to see
-changes live. The runner hot-reloads whenever `run.py` changes on disk.
+Audio Reactive Circle and Particles
 """
 
 from src import (
