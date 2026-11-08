@@ -17,17 +17,12 @@
 
 ---
 
-Chutney draws a lot of inspiration from [TouchDesigner](https://derivative.ca/) and [Hydra](https://hydra.ojack.xyz/), trying to make something that natively uses Python so it can be easily modified and extended locally. I chose a local Python environment rather than the browser because I feel that audio routing is much easier to handle, and the application runs much faster when integrating local ML models for more interesting experiments. It is heavily inspired by the node-based structure of TD, allowing workflows to be defined like a DAG (shoutout to [Airflow](https://airflow.apache.org/)) and modified in real time.
-
-If something looks like slop and reads like slop, it is slop my brother.
+Chutney draws a lot of inspiration from [TouchDesigner](https://derivative.ca/) and [Hydra](https://hydra.ojack.xyz/), trying to make something that natively uses Python so it can be easily modified/ extended locally, audio routing is much easier to handle, and the application can directly integrate with local ML models for further experiments. The workflows are defined like a DAG (shoutout to [Airflow](https://airflow.apache.org/)) and can be modified in real time.
 
 ## Quickstart
 
 
-
-### Prerequisites
-
-Install [pixi](https://pixi.sh) (recommended) or use a Python 3.11+ environment with ModernGL and MediaPipe installed.
+Install [Pixi](https://pixi.sh) (recommended) or use a Python 3.11+ environment with ModernGL and MediaPipe installed.
 
 ```bash
 # Clone the repository
