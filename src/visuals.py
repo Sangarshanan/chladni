@@ -81,7 +81,9 @@ class Circle(Geometry):
     color = Param((1.0, 1.0, 1.0))
     softness = Param(0.0)
 
-    def __init__(self, x=0.0, y=0.0, radius=0.2, color=(1.0, 1.0, 1.0), softness=0.0, segments=48):
+    def __init__(
+        self, x=0.0, y=0.0, radius=0.2, color=(1.0, 1.0, 1.0), softness=0.0, segments=48
+    ):
         super().__init__()
         self.x, self.y, self.radius, self.color = x, y, radius, color
         self.softness = softness
@@ -98,9 +100,13 @@ class Circle(Geometry):
 
     def render(self, ctx):
         if self._prog is None:
-            self._prog = ctx.program(vertex_shader=_CIRCLE_VERTEX, fragment_shader=_CIRCLE_FRAGMENT)
+            self._prog = ctx.program(
+                vertex_shader=_CIRCLE_VERTEX, fragment_shader=_CIRCLE_FRAGMENT
+            )
             self._vbo = ctx.buffer(reserve=6 * 4 * 4, dynamic=True)
-            self._vao = ctx.vertex_array(self._prog, [(self._vbo, "2f 2f", "in_pos", "in_local")])
+            self._vao = ctx.vertex_array(
+                self._prog, [(self._vbo, "2f 2f", "in_pos", "in_local")]
+            )
         width, height = ctx.fbo.size
         cx, cy, r = float(self.x), float(self.y), max(float(self.radius), 1e-4)
         rx = r * height / width
@@ -108,10 +114,35 @@ class Circle(Geometry):
         pad = 1.0 + 2.0 / max(radius_px, 1.0)
         x0, x1 = cx - rx * pad, cx + rx * pad
         y0, y1 = cy - r * pad, cy + r * pad
-        quad = np.array([
-            x0, y0, -pad, -pad,  x1, y0, pad, -pad,  x1, y1, pad, pad,
-            x0, y0, -pad, -pad,  x1, y1, pad, pad,  x0, y1, -pad, pad,
-        ], dtype="f4")
+        quad = np.array(
+            [
+                x0,
+                y0,
+                -pad,
+                -pad,
+                x1,
+                y0,
+                pad,
+                -pad,
+                x1,
+                y1,
+                pad,
+                pad,
+                x0,
+                y0,
+                -pad,
+                -pad,
+                x1,
+                y1,
+                pad,
+                pad,
+                x0,
+                y1,
+                -pad,
+                pad,
+            ],
+            dtype="f4",
+        )
         self._vbo.write(quad.tobytes())
         color = tuple(float(c) for c in self.color)
         self._prog["color"].value = color[:3]
@@ -132,8 +163,15 @@ class Circle(Geometry):
 class Bars(Geometry):
     """A row of bars, one per entry in `values` (each may be a Signal in [0, 1])."""
 
-    def __init__(self, values=(0.0, 0.0, 0.0), x=0.0, y=-0.9, width=1.8, gap=0.1,
-                 color=(1.0, 1.0, 1.0)):
+    def __init__(
+        self,
+        values=(0.0, 0.0, 0.0),
+        x=0.0,
+        y=-0.9,
+        width=1.8,
+        gap=0.1,
+        color=(1.0, 1.0, 1.0),
+    ):
         super().__init__()
         self.values = list(values)
         self.x, self.y, self.width, self.gap = x, y, width, gap
@@ -150,8 +188,12 @@ class Bars(Geometry):
             right = left + bar_width
             bottom, top = self.y, self.y + height
             quads += [
-                [left, bottom], [right, bottom], [right, top],
-                [left, bottom], [right, top], [left, top],
+                [left, bottom],
+                [right, bottom],
+                [right, top],
+                [left, bottom],
+                [right, top],
+                [left, top],
             ]
         positions = np.array(quads, dtype="f4")
         colors = np.tile(np.array(self.color, dtype="f4"), (len(positions), 1))
@@ -199,8 +241,12 @@ def _curl(x, y, t, eps=0.02, period=None):
 
     https://www.youtube.com/watch?v=rB83DpBJQsE
     """
-    dpsi_dy = (_noise2(x, y + eps, t, period) - _noise2(x, y - eps, t, period)) / (2 * eps)
-    dpsi_dx = (_noise2(x + eps, y, t, period) - _noise2(x - eps, y, t, period)) / (2 * eps)
+    dpsi_dy = (_noise2(x, y + eps, t, period) - _noise2(x, y - eps, t, period)) / (
+        2 * eps
+    )
+    dpsi_dx = (_noise2(x + eps, y, t, period) - _noise2(x - eps, y, t, period)) / (
+        2 * eps
+    )
     return dpsi_dy, -dpsi_dx
 
 
@@ -217,13 +263,28 @@ class Particles(Geometry):
     turbulence = Param(1.0)
     variation = Param(0.6)
 
-    def __init__(self, max_count=500, count=500, speed=0.3, size=4.0,
-                 color=(1.0, 1.0, 1.0), turbulence=1.0, scale=1.5,
-                 color_by=None, variation=0.6, lifetime=4.0, seed=None):
+    def __init__(
+        self,
+        max_count=500,
+        count=500,
+        speed=0.3,
+        size=4.0,
+        color=(1.0, 1.0, 1.0),
+        turbulence=1.0,
+        scale=1.5,
+        color_by=None,
+        variation=0.6,
+        lifetime=4.0,
+        seed=None,
+    ):
         super().__init__()
         self.max_count = max_count
         self.count, self.speed, self.size, self.color, self.turbulence = (
-            count, speed, size, color, turbulence
+            count,
+            speed,
+            size,
+            color,
+            turbulence,
         )
         # The field must tile across the wrapped [-1, 1] domain, so the number of
         # noise cells spanning it is snapped to an integer (scale = cells / 2).
@@ -239,7 +300,9 @@ class Particles(Geometry):
         self._t = 0.0
 
     def _velocity(self, x, y, t):
-        base_x, base_y = _curl(x * self.scale, y * self.scale, t * 0.1, period=self._period)
+        base_x, base_y = _curl(
+            x * self.scale, y * self.scale, t * 0.1, period=self._period
+        )
         detail_x, detail_y = _curl(
             x * self.scale * 3.0, y * self.scale * 3.0, t * 0.3, period=self._period * 3
         )
@@ -253,7 +316,9 @@ class Particles(Geometry):
         # the noise detail: plain Euler spirals particles out of vortex cores and into
         # clumps, which defeats the point of a divergence-free field.
         step = self.speed * dt
-        substeps = int(min(4, max(1, np.ceil(abs(step) * (1.0 + abs(self.turbulence)) / 0.02))))
+        substeps = int(
+            min(4, max(1, np.ceil(abs(step) * (1.0 + abs(self.turbulence)) / 0.02)))
+        )
         step /= substeps
         px, py = x, y
         for _ in range(substeps):
@@ -311,8 +376,15 @@ class Output(Node):
     vignette = Param(DEFAULT_SETTINGS["vignette"])
     palette_mix = Param(DEFAULT_SETTINGS["palette_mix"])
 
-    def __init__(self, background=(0.02, 0.02, 0.03), render_scale=1.0, tonemap="none",
-                 palette=None, dither=True, **post):
+    def __init__(
+        self,
+        background=(0.02, 0.02, 0.03),
+        render_scale=1.0,
+        tonemap="none",
+        palette=None,
+        dither=True,
+        **post,
+    ):
         super().__init__()
         unknown = set(post) - set(DEFAULT_SETTINGS)
         if unknown:
@@ -331,6 +403,9 @@ class Output(Node):
 
     def settings(self):
         """Resolve every post-processing setting to plain numbers for this frame."""
-        values = {key: evaluate(getattr(self, key, default)) for key, default in DEFAULT_SETTINGS.items()}
+        values = {
+            key: evaluate(getattr(self, key, default))
+            for key, default in DEFAULT_SETTINGS.items()
+        }
         values["render_scale"] = min(max(float(values["render_scale"]), 1.0), 4.0)
         return values

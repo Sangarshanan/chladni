@@ -86,7 +86,9 @@ class _Tracker:
         self.min_peak = min_peak_db
         self.hi_fall = hi_fall_db_s
         self.lo_rise = lo_rise_db_s
-        self.lo = None  # seeded from the first reading, which is assumed to be room noise
+        self.lo = (
+            None  # seeded from the first reading, which is assumed to be room noise
+        )
         self.hi = max(floor_db + min_range_db, min_peak_db)
 
     def normalise(self, db, dt):
@@ -102,22 +104,39 @@ class AudioBands(Node):
     Exposes `.low`, `.mid`, `.high` and overall `.level` as live Signals in 0..1.
     """
 
-    def __init__(self, samplerate=44100, blocksize=1024, smoothing=None, device=None,
-                 attack=0.03, release=0.25, auto_gain=True, gain=1.0, gate=0.05,
-                 floor_db=-70.0, min_range_db=25.0, min_peak_db=-45.0, peak_fall_db_s=2.0,
-                 floor_rise_db_s=0.5):
+    def __init__(
+        self,
+        samplerate=44100,
+        blocksize=1024,
+        smoothing=None,
+        device=None,
+        attack=0.03,
+        release=0.25,
+        auto_gain=True,
+        gain=1.0,
+        gate=0.05,
+        floor_db=-70.0,
+        min_range_db=25.0,
+        min_peak_db=-45.0,
+        peak_fall_db_s=2.0,
+        floor_rise_db_s=0.5,
+    ):
         self._stream = _AudioStream.instance(
             samplerate=samplerate, blocksize=blocksize, device=device
         )
         super().__init__()
         self.attack = attack
-        self.release = release if smoothing is None else smoothing  # `smoothing` is the old name
+        self.release = (
+            release if smoothing is None else smoothing
+        )  # `smoothing` is the old name
         self.auto_gain = auto_gain
         self.gain = gain
         self.gate = gate
         self.floor_db = floor_db
         self._trackers = {
-            name: _Tracker(floor_db, min_range_db, min_peak_db, peak_fall_db_s, floor_rise_db_s)
+            name: _Tracker(
+                floor_db, min_range_db, min_peak_db, peak_fall_db_s, floor_rise_db_s
+            )
             for name in ("low", "mid", "high", "level")
         }
         self._values = {name: 0.0 for name in self._trackers}

@@ -7,18 +7,18 @@ import moderngl
 import numpy as np
 
 DEFAULT_SETTINGS = {
-    "render_scale": 1.0,       # >1 supersamples the scene (anti-aliasing)
-    "bloom": 0.0,              # bloom intensity
-    "bloom_threshold": 0.7,    # brightness where bloom starts
-    "trails": 0.0,             # feedback decay per 1/60 s (0 = off, 0.9 = long trails)
-    "trails_zoom": 1.0,        # >1 pushes trails outward, <1 pulls them in
+    "render_scale": 1.0,  # >1 supersamples the scene (anti-aliasing)
+    "bloom": 0.0,  # bloom intensity
+    "bloom_threshold": 0.7,  # brightness where bloom starts
+    "trails": 0.0,  # feedback decay per 1/60 s (0 = off, 0.9 = long trails)
+    "trails_zoom": 1.0,  # >1 pushes trails outward, <1 pulls them in
     "exposure": 1.0,
     "contrast": 1.0,
     "saturation": 1.0,
-    "hue": 0.0,                # hue rotation in radians
+    "hue": 0.0,  # hue rotation in radians
     "vignette": 0.0,
-    "tonemap": "none",         # "none", "aces" or "reinhard"
-    "palette": None,           # list of RGB stops used as a gradient map (Lookup TOP)
+    "tonemap": "none",  # "none", "aces" or "reinhard"
+    "palette": None,  # list of RGB stops used as a gradient map (Lookup TOP)
     "palette_mix": 0.0,
     "dither": True,
 }
@@ -201,11 +201,16 @@ class PostChain:
         self._progs = {
             name: ctx.program(vertex_shader=_VERTEX, fragment_shader=src)
             for name, src in (
-                ("feedback", _FEEDBACK), ("prefilter", _PREFILTER), ("down", _DOWN),
-                ("up", _UP), ("composite", _COMPOSITE),
+                ("feedback", _FEEDBACK),
+                ("prefilter", _PREFILTER),
+                ("down", _DOWN),
+                ("up", _UP),
+                ("composite", _COMPOSITE),
             )
         }
-        self._vaos = {name: ctx.vertex_array(prog, []) for name, prog in self._progs.items()}
+        self._vaos = {
+            name: ctx.vertex_array(prog, []) for name, prog in self._progs.items()
+        }
 
     def _build(self, fb_size, scale):
         self._release_targets()
@@ -229,7 +234,11 @@ class PostChain:
             self._bloom.append((t, self.ctx.framebuffer(color_attachments=[t])))
 
     def _release_targets(self):
-        pairs = ([self._scene] if self._scene else []) + (self._feedback or []) + self._bloom
+        pairs = (
+            ([self._scene] if self._scene else [])
+            + (self._feedback or [])
+            + self._bloom
+        )
         for tex, fbo in pairs:
             fbo.release()
             tex.release()
@@ -259,7 +268,9 @@ class PostChain:
         xs = np.linspace(0.0, 1.0, len(stops))
         grid = np.linspace(0.0, 1.0, 256)
         data = np.stack(
-            [np.interp(grid, xs, [s[i] for s in stops]) for i in range(3)] + [np.ones(256)], axis=1
+            [np.interp(grid, xs, [s[i] for s in stops]) for i in range(3)]
+            + [np.ones(256)],
+            axis=1,
         ).astype("f4")
         if self._palette_tex is not None:
             self._palette_tex.release()
@@ -283,7 +294,11 @@ class PostChain:
             self._scene[0].use(0)
             prev[0].use(1)
             self._fullscreen(
-                "feedback", cur[1], scene=0, prev=1, decay=decay,
+                "feedback",
+                cur[1],
+                scene=0,
+                prev=1,
+                decay=decay,
                 zoom=float(settings["trails_zoom"]),
             )
             self._feedback.reverse()
@@ -313,8 +328,11 @@ class PostChain:
         screen.use()
         ctx.viewport = (0, 0, fb_size[0], fb_size[1])
         self._fullscreen(
-            "composite", screen,
-            scene=0, bloom_tex=1, palette_tex=2,
+            "composite",
+            screen,
+            scene=0,
+            bloom_tex=1,
+            palette_tex=2,
             scene_size=(float(self.size[0]), float(self.size[1])),
             render_scale=float(self.scale),
             bloom=bloom,
@@ -334,7 +352,10 @@ class PostChain:
         source.use(0)
         _, first_fbo = self._bloom[0]
         self._fullscreen(
-            "prefilter", first_fbo, source=0, threshold=threshold,
+            "prefilter",
+            first_fbo,
+            source=0,
+            threshold=threshold,
             texel=(1.0 / self.size[0], 1.0 / self.size[1]),
         )
         for i in range(1, len(self._bloom)):
@@ -342,7 +363,10 @@ class PostChain:
             _, fbo = self._bloom[i]
             prev_tex.use(0)
             self._fullscreen(
-                "down", fbo, source=0, texel=(1.0 / prev_tex.width, 1.0 / prev_tex.height)
+                "down",
+                fbo,
+                source=0,
+                texel=(1.0 / prev_tex.width, 1.0 / prev_tex.height),
             )
         ctx.enable(moderngl.BLEND)
         ctx.blend_func = moderngl.ONE, moderngl.ONE
@@ -351,7 +375,10 @@ class PostChain:
             _, high_fbo = self._bloom[i - 1]
             low_tex.use(0)
             self._fullscreen(
-                "up", high_fbo, source=0, texel=(1.0 / low_tex.width, 1.0 / low_tex.height)
+                "up",
+                high_fbo,
+                source=0,
+                texel=(1.0 / low_tex.width, 1.0 / low_tex.height),
             )
         ctx.disable(moderngl.BLEND)
 

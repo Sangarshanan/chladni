@@ -23,21 +23,38 @@ from mediapipe.tasks import python as _mp_python
 from mediapipe.tasks.python import vision as _mp_vision
 
 HAND_CONNECTIONS = [
-    (0, 1), (1, 2), (2, 3), (3, 4),        # Thumb
-    (0, 5), (5, 6), (6, 7), (7, 8),        # Index
-    (0, 9), (9, 10), (10, 11), (11, 12),   # Middle
-    (0, 13), (13, 14), (14, 15), (15, 16), # Ring
-    (0, 17), (17, 18), (18, 19), (19, 20), # Pinky
-    (5, 9), (9, 13), (13, 17),             # Palm connections
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),  # Thumb
+    (0, 5),
+    (5, 6),
+    (6, 7),
+    (7, 8),  # Index
+    (0, 9),
+    (9, 10),
+    (10, 11),
+    (11, 12),  # Middle
+    (0, 13),
+    (13, 14),
+    (14, 15),
+    (15, 16),  # Ring
+    (0, 17),
+    (17, 18),
+    (18, 19),
+    (19, 20),  # Pinky
+    (5, 9),
+    (9, 13),
+    (13, 17),  # Palm connections
 ]
 
-_WRIST       = 0
-_THUMB_IP    = 3
-_THUMB_TIP   = 4
-_INDEX_TIP   = 8
-_MIDDLE_MCP  = 9
-_PINKY_MCP   = 17
-_FINGER_MCPS = [5, 9, 13, 17]   # index, middle, ring, pinky
+_WRIST = 0
+_THUMB_IP = 3
+_THUMB_TIP = 4
+_INDEX_TIP = 8
+_MIDDLE_MCP = 9
+_PINKY_MCP = 17
+_FINGER_MCPS = [5, 9, 13, 17]  # index, middle, ring, pinky
 _FINGER_TIPS = [8, 12, 16, 20]  # index, middle, ring, pinky
 
 # Requested capture size (the driver may pick the nearest supported mode).
@@ -81,8 +98,10 @@ def draw_hand_landmarks(
                 _cv2.line(annotated, pts[a], pts[b], (0, 255, 0), line_thickness)
 
         if draw_points:
-            for (x, y) in pts:
-                _cv2.circle(annotated, (x, y), point_radius, (0, 0, 255), point_thickness)
+            for x, y in pts:
+                _cv2.circle(
+                    annotated, (x, y), point_radius, (0, 0, 255), point_thickness
+                )
 
     return annotated
 
@@ -102,13 +121,32 @@ def _draw_hud(img: np.ndarray, gestures: dict | None):
         lines = (
             (f"Pinch: {gestures['pinch']:.2f}", 10, 30, 0.4, (255, 255, 255)),
             (f"Open: {gestures['openness']:.2f}", 115, 30, 0.4, (255, 255, 255)),
-            (f"Fingers: {int(round(gestures['fingers'] * 5))}/5", 215, 30, 0.4, (255, 255, 255)),
-            (f"Pos: ({gestures['hand_x']:+.2f}, {gestures['hand_y']:+.2f})", 10, 12, 0.38,
-             (180, 180, 180)),
+            (
+                f"Fingers: {int(round(gestures['fingers'] * 5))}/5",
+                215,
+                30,
+                0.4,
+                (255, 255, 255),
+            ),
+            (
+                f"Pos: ({gestures['hand_x']:+.2f}, {gestures['hand_y']:+.2f})",
+                10,
+                12,
+                0.38,
+                (180, 180, 180),
+            ),
         )
         for text, x, y_from_bottom, size, color in lines:
-            _cv2.putText(img, text, (int(x * k), h - int(y_from_bottom * k)), font,
-                         size * k, color, thick, _cv2.LINE_AA)
+            _cv2.putText(
+                img,
+                text,
+                (int(x * k), h - int(y_from_bottom * k)),
+                font,
+                size * k,
+                color,
+                thick,
+                _cv2.LINE_AA,
+            )
 
 
 def _ensure_model(custom_path=None) -> Path | None:
@@ -175,8 +213,8 @@ def _compute_gestures(landmarks):
     """Return a dict of scale-invariant normalised gesture values from a hand's landmarks."""
     # Position: wrist in image coords -> NDC (-1..1, with y flipped).
     wx, wy = _lm(landmarks, _WRIST)
-    hand_x = (wx - 0.5) * 2.0         # 0->-1, 1->+1 (left=-1, right=+1)
-    hand_y = -(wy - 0.5) * 2.0        # 0->+1, 1->-1 (top=+1, bottom=-1)
+    hand_x = (wx - 0.5) * 2.0  # 0->-1, 1->+1 (left=-1, right=+1)
+    hand_y = -(wy - 0.5) * 2.0  # 0->+1, 1->-1 (top=+1, bottom=-1)
 
     # Reference palm size (wrist to middle finger MCP) for depth/scale invariance.
     palm_size = max(_dist(landmarks, _WRIST, _MIDDLE_MCP), 1e-4)
@@ -196,21 +234,21 @@ def _compute_gestures(landmarks):
     openness = (mean_ratio - 0.75) / 1.15
 
     return {
-        "hand_x":       float(max(-1.0, min(1.0, hand_x))),
-        "hand_y":       float(max(-1.0, min(1.0, hand_y))),
-        "pinch":        float(max(0.0, min(1.0, pinch))),
-        "fingers":      float(max(0.0, min(1.0, fingers))),
-        "openness":     float(max(0.0, min(1.0, openness))),
+        "hand_x": float(max(-1.0, min(1.0, hand_x))),
+        "hand_y": float(max(-1.0, min(1.0, hand_y))),
+        "pinch": float(max(0.0, min(1.0, pinch))),
+        "fingers": float(max(0.0, min(1.0, fingers))),
+        "openness": float(max(0.0, min(1.0, openness))),
         "hand_present": 1.0,
     }
 
 
 _ABSENT = {
-    "hand_x":       0.0,
-    "hand_y":       0.0,
-    "pinch":        0.0,
-    "fingers":      0.0,
-    "openness":     0.0,
+    "hand_x": 0.0,
+    "hand_y": 0.0,
+    "pinch": 0.0,
+    "fingers": 0.0,
+    "openness": 0.0,
     "hand_present": 0.0,
 }
 
@@ -223,9 +261,9 @@ class _CameraStream:
     def __init__(self, device=0, model_path=None, resolution=(_FRAME_W, _FRAME_H)):
         self._lock = threading.Lock()
         self._gestures = dict(_ABSENT)
-        self._frame = None          # latest full-resolution BGR frame, never annotated
+        self._frame = None  # latest full-resolution BGR frame, never annotated
         self._frame_id = 0
-        self._landmarks = None      # (21, 2) normalised, in mirrored image space
+        self._landmarks = None  # (21, 2) normalised, in mirrored image space
         self._running = True
 
         model_file = _ensure_model(model_path)
@@ -282,7 +320,8 @@ class _CameraStream:
             small = frame
             if scale < 1.0:
                 small = _cv2.resize(
-                    frame, (max(1, int(w * scale)), max(1, int(h * scale))),
+                    frame,
+                    (max(1, int(w * scale)), max(1, int(h * scale))),
                     interpolation=_cv2.INTER_AREA,
                 )
             # Landmarks live in mirrored space so hand_x matches what the user sees.
@@ -350,11 +389,14 @@ class _CameraStream:
     @classmethod
     def instance(cls, device=0, model_path=None, resolution=(_FRAME_W, _FRAME_H)):
         if cls._instance is None:
-            cls._instance = cls(device=device, model_path=model_path, resolution=resolution)
+            cls._instance = cls(
+                device=device, model_path=model_path, resolution=resolution
+            )
         return cls._instance
 
 
 # Signal and Node
+
 
 class _GestureSignal(Signal):
     """A live Signal reading one gesture value off a GestureInput node."""
@@ -387,8 +429,14 @@ class GestureInput(Node):
         gesture.overlay >> output
     """
 
-    def __init__(self, device=0, smoothing=0.08, model_path=None, show_window=False,
-                 resolution=(_FRAME_W, _FRAME_H)):
+    def __init__(
+        self,
+        device=0,
+        smoothing=0.08,
+        model_path=None,
+        show_window=False,
+        resolution=(_FRAME_W, _FRAME_H),
+    ):
         self._stream = _CameraStream.instance(
             device=device, model_path=model_path, resolution=resolution
         )
@@ -399,11 +447,11 @@ class GestureInput(Node):
         self._values = dict(_ABSENT)
         self._overlay_node = None
 
-        self.hand_x       = _GestureSignal(self, "hand_x")
-        self.hand_y       = _GestureSignal(self, "hand_y")
-        self.pinch        = _GestureSignal(self, "pinch")
-        self.fingers      = _GestureSignal(self, "fingers")
-        self.openness     = _GestureSignal(self, "openness")
+        self.hand_x = _GestureSignal(self, "hand_x")
+        self.hand_y = _GestureSignal(self, "hand_y")
+        self.pinch = _GestureSignal(self, "pinch")
+        self.fingers = _GestureSignal(self, "fingers")
+        self.openness = _GestureSignal(self, "openness")
         self.hand_present = _GestureSignal(self, "hand_present")
 
     @property
@@ -426,7 +474,9 @@ class GestureInput(Node):
         alpha = 1.0 - math.exp(-dt / max(self.smoothing, 1e-6))
 
         # Always smooth hand_present toward current detection state
-        self._values["hand_present"] += (raw["hand_present"] - self._values["hand_present"]) * alpha
+        self._values["hand_present"] += (
+            raw["hand_present"] - self._values["hand_present"]
+        ) * alpha
 
         # Only update spatial/gesture parameters when a hand is visible; hold last values otherwise
         if raw["hand_present"] > 0.5:
@@ -494,7 +544,8 @@ class CameraOverlay(Geometry):
     saturation = Param(1.0)
 
     def __init__(
-        self, gesture: GestureInput,
+        self,
+        gesture: GestureInput,
         alpha=1.0,
         x=-1,
         y=-1,
@@ -535,8 +586,16 @@ class CameraOverlay(Geometry):
             return 1.0, 1.0
         wide = frame_aspect > rect_aspect
         if self.fit == "contain":
-            return (1.0, frame_aspect / rect_aspect) if wide else (rect_aspect / frame_aspect, 1.0)
-        return (rect_aspect / frame_aspect, 1.0) if wide else (1.0, frame_aspect / rect_aspect)
+            return (
+                (1.0, frame_aspect / rect_aspect)
+                if wide
+                else (rect_aspect / frame_aspect, 1.0)
+            )
+        return (
+            (rect_aspect / frame_aspect, 1.0)
+            if wide
+            else (1.0, frame_aspect / rect_aspect)
+        )
 
     def render(self, ctx):
         """Render the camera frame and skeleton into the current framebuffer."""
@@ -546,9 +605,13 @@ class CameraOverlay(Geometry):
 
         h, w = frame.shape[:2]
         if self._prog is None:
-            self._prog = ctx.program(vertex_shader=_OVERLAY_VERTEX, fragment_shader=_OVERLAY_FRAGMENT)
+            self._prog = ctx.program(
+                vertex_shader=_OVERLAY_VERTEX, fragment_shader=_OVERLAY_FRAGMENT
+            )
             self._vbo = ctx.buffer(reserve=24 * 4, dynamic=True)
-            self._vao = ctx.vertex_array(self._prog, [(self._vbo, "2f 2f", "in_pos", "in_uv")])
+            self._vao = ctx.vertex_array(
+                self._prog, [(self._vbo, "2f 2f", "in_pos", "in_uv")]
+            )
 
         if self._tex is None or self._tex.size != (w, h):
             if self._tex is not None:
@@ -565,21 +628,46 @@ class CameraOverlay(Geometry):
             self._tex.write(np.ascontiguousarray(frame), alignment=1)
             self._tex.build_mipmaps()
 
-        bounds = (float(evaluate(self.x)), float(evaluate(self.y)),
-                  float(evaluate(self.width)), float(evaluate(self.height)))
+        bounds = (
+            float(evaluate(self.x)),
+            float(evaluate(self.y)),
+            float(evaluate(self.width)),
+            float(evaluate(self.height)),
+        )
         if self._bounds != bounds:
             self._bounds = bounds
             x0, y0, bw, bh = bounds
             x1, y1 = x0 + bw, y0 + bh
             # (0, 1) top UV to (1, 0) bottom UV to match top-down image coords
-            quad = np.array([
-                x0, y0, 0.0, 1.0,
-                x1, y0, 1.0, 1.0,
-                x1, y1, 1.0, 0.0,
-                x0, y0, 0.0, 1.0,
-                x1, y1, 1.0, 0.0,
-                x0, y1, 0.0, 0.0,
-            ], dtype="f4")
+            quad = np.array(
+                [
+                    x0,
+                    y0,
+                    0.0,
+                    1.0,
+                    x1,
+                    y0,
+                    1.0,
+                    1.0,
+                    x1,
+                    y1,
+                    1.0,
+                    0.0,
+                    x0,
+                    y0,
+                    0.0,
+                    1.0,
+                    x1,
+                    y1,
+                    1.0,
+                    0.0,
+                    x0,
+                    y1,
+                    0.0,
+                    0.0,
+                ],
+                dtype="f4",
+            )
             self._vbo.write(quad.tobytes())
 
         fb_w, fb_h = ctx.fbo.size
@@ -622,15 +710,29 @@ class CameraOverlay(Geometry):
         normal = np.stack([-d[:, 1], d[:, 0]], axis=1) / length
         offset = normal * (2.0 * gfx.pixel_scale)
         p0, p1 = pix[a], pix[b]
-        quads = np.stack([p0 - offset, p0 + offset, p1 + offset,
-                          p0 - offset, p1 + offset, p1 - offset], axis=1).reshape(-1, 2)
+        quads = np.stack(
+            [
+                p0 - offset,
+                p0 + offset,
+                p1 + offset,
+                p0 - offset,
+                p1 + offset,
+                p1 - offset,
+            ],
+            axis=1,
+        ).reshape(-1, 2)
         quads = quads / half - 1.0
 
         color = np.array(self.skeleton_color, dtype="f4")
         gfx.draw.draw(quads.astype("f4"), np.tile(color, (len(quads), 1)), "triangles")
         joints = ndc.astype("f4")
-        gfx.draw.draw(joints, np.tile(np.array([1.0, 0.35, 0.3], dtype="f4"), (len(joints), 1)),
-                      "points", size=9.0, pixel_scale=gfx.pixel_scale)
+        gfx.draw.draw(
+            joints,
+            np.tile(np.array([1.0, 0.35, 0.3], dtype="f4"), (len(joints), 1)),
+            "points",
+            size=9.0,
+            pixel_scale=gfx.pixel_scale,
+        )
 
     def close(self):
         """Release ModernGL GPU resources when pipeline hot-reloads."""

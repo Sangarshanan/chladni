@@ -1,5 +1,5 @@
 """
-ModernGL window that executes the script, renders the visuals 
+ModernGL window that executes the script, renders the visuals
 and hot-reloads the script whenever its file changes on disk.
 """
 
@@ -91,7 +91,9 @@ class Runner:
             self._mtimes = self._snapshot()
             print(f"[chladni] reloaded {os.path.basename(self.script_path)}")
         except Exception:
-            print(f"[chladni] reload failed, keeping previous pipeline:\n{traceback.format_exc()}")
+            print(
+                f"[chladni] reload failed, keeping previous pipeline:\n{traceback.format_exc()}"
+            )
 
     def _draw_layers(self, ctx, outputs):
         for output in outputs:
@@ -177,17 +179,25 @@ class Runner:
     def _save_screenshot(ctx, path, width, height):
         import cv2
 
-        data = np.frombuffer(ctx.screen.read(viewport=(0, 0, width, height), components=3), np.uint8)
+        data = np.frombuffer(
+            ctx.screen.read(viewport=(0, 0, width, height), components=3), np.uint8
+        )
         image = data.reshape(height, width, 3)[::-1]
         cv2.imwrite(path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
         print(f"[chladni] saved {path} ({width}x{height})")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run a chladni script in a live window.")
+    parser = argparse.ArgumentParser(
+        description="Run a chladni script in a live window."
+    )
     parser.add_argument("script", nargs="?", default="run.py")
-    parser.add_argument("--frames", type=int, default=None, help="exit after this many frames")
-    parser.add_argument("--screenshot", default=None, help="save the last frame here (needs --frames)")
+    parser.add_argument(
+        "--frames", type=int, default=None, help="exit after this many frames"
+    )
+    parser.add_argument(
+        "--screenshot", default=None, help="save the last frame here (needs --frames)"
+    )
     args = parser.parse_args()
     Runner(args.script).run(max_frames=args.frames, screenshot=args.screenshot)
 

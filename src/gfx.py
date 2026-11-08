@@ -65,7 +65,9 @@ class _Draw:
 
     def __init__(self, ctx):
         self.ctx = ctx
-        self.program = ctx.program(vertex_shader=_VERTEX_SHADER, fragment_shader=_FRAGMENT_SHADER)
+        self.program = ctx.program(
+            vertex_shader=_VERTEX_SHADER, fragment_shader=_FRAGMENT_SHADER
+        )
         self._vbo = None
         self._vao = None
 
@@ -76,7 +78,9 @@ class _Draw:
         data = np.hstack([positions, colors]).astype("f4").tobytes()
         if self._vbo is None or self._vbo.size < len(data):
             self.release()
-            self._vbo = self.ctx.buffer(reserve=max(len(data) * 2, 1 << 16), dynamic=True)
+            self._vbo = self.ctx.buffer(
+                reserve=max(len(data) * 2, 1 << 16), dynamic=True
+            )
             self._vao = self.ctx.vertex_array(
                 self.program, [(self._vbo, "2f 3f", "in_pos", "in_color")]
             )
@@ -120,7 +124,9 @@ def draw_geometry(ctx, geometry):
     gfx = state(ctx)
     set_blend(ctx, getattr(geometry, "blend", "alpha"))
     gfx.draw.draw(
-        positions, colors, mode,
+        positions,
+        colors,
+        mode,
         size=float(getattr(geometry, "size", 1.0)),
         opacity=float(getattr(geometry, "opacity", 1.0)),
         pixel_scale=gfx.pixel_scale,

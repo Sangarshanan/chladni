@@ -1,11 +1,11 @@
 """
-Audio-reactive generative visual synthesizer
+Audio-reactive tunnel visual synthesizer
 """
 
 from src import Pipeline, AudioBands, Impulse, ISFGenerator, Particles, Output
 
 with Pipeline() as pipeline:
-    audio = AudioBands()
+    audio = AudioBands(device="VB-Cable")
 
     # triggers a spike on an impulse (Bass or Kick?)
     kick = Impulse(audio.low, sensitivity=1.5, decay=0.2)

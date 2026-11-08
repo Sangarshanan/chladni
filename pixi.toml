@@ -12,6 +12,7 @@ audioreactive_tunnel = "python -m src.runner examples/3_audioreactive_tunnel.py"
 camera_filters = "python -m src.runner examples/4_gesture_camera_isf_filters.py"
 kaleidoscope = "python -m src.runner examples/5_audioreactive_kaleidoscope.py"
 shader = "python -m src.runner examples/6_shader_audio_gesture.py"
+hoopdreams = "python -m src.runner examples/7_audioreactive_hoopdreams.py"
 
 [dependencies]
 python = ">=3.15"
