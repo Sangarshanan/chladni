@@ -3,6 +3,7 @@ from .audio import AudioBands
 from .signals import Noise, GaussianNoise, Impulse
 from .visuals import Circle, Bars, Particles, Output
 from .camera import GestureInput, CameraOverlay, draw_hand_landmarks, HAND_CONNECTIONS
+from .editor import LiveEditor
 from .isf import ISFGenerator, ISFFilter
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "HAND_CONNECTIONS",
     "ISFGenerator",
     "ISFFilter",
+    "LiveEditor",
 ]

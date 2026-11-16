@@ -13,6 +13,7 @@ import moderngl
 import numpy as np
 
 from .core import Pipeline
+from .editor import LiveEditor
 from .gfx import draw_geometry, set_blend, state
 from .post import PostChain
 from .visuals import Output
@@ -23,11 +24,13 @@ _MAX_DT = 0.1  # clamp stalls (window drag, breakpoint) so animation never jumps
 class Runner:
     """Watches `script_path`, executes it to build a Pipeline, and renders it each frame."""
 
-    def __init__(self, script_path, width=900, height=900, title="chladni"):
+    def __init__(self, script_path, width=900, height=900, title="chladni", enable_editor=True):
         self.script_path = os.path.abspath(script_path)
         self.width = width
         self.height = height
         self.title = title
+        self.enable_editor = enable_editor
+        self.editor = None
         self._mtimes = {}
         self._last_check = 0.0
         self._reported = set()
@@ -89,6 +92,8 @@ class Runner:
         try:
             self._load()
             self._mtimes = self._snapshot()
+            if self.editor is not None:
+                self.editor.on_external_reload()
             print(f"[chladni] reloaded {os.path.basename(self.script_path)}")
         except Exception:
             print(
@@ -122,6 +127,9 @@ class Runner:
             raise RuntimeError("glfw.create_window() failed")
         glfw.make_context_current(window)
         glfw.swap_interval(1)
+
+        if self.enable_editor:
+            self.editor = LiveEditor(self.script_path, self, window=window)
 
         ctx = moderngl.create_context()
         post = PostChain(ctx)
@@ -162,6 +170,10 @@ class Runner:
 
                 post.finish(settings, dt, ctx.screen, (fb_w, fb_h))
 
+                if self.editor is not None:
+                    win_w = max(glfw.get_window_size(window)[0], 1)
+                    self.editor.render(ctx, (fb_w, fb_h), win_w, win_h, dt)
+
                 frame += 1
                 if max_frames is not None and frame >= max_frames:
                     if screenshot:
@@ -171,6 +183,8 @@ class Runner:
                 glfw.swap_buffers(window)
                 glfw.poll_events()
         finally:
+            if self.editor is not None:
+                self.editor.close()
             self._close_pipeline(self.pipeline)
             post.release()
             glfw.terminate()
@@ -198,8 +212,13 @@ def main():
     parser.add_argument(
         "--screenshot", default=None, help="save the last frame here (needs --frames)"
     )
+    parser.add_argument(
+        "--no-editor", action="store_true", help="start with live editor overlay disabled"
+    )
     args = parser.parse_args()
-    Runner(args.script).run(max_frames=args.frames, screenshot=args.screenshot)
+    Runner(args.script, enable_editor=not args.no_editor).run(
+        max_frames=args.frames, screenshot=args.screenshot
+    )
 
 
 if __name__ == "__main__":
