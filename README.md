@@ -49,23 +49,6 @@ You can also run any patch directly with the hot-reloading runner:
 python -m src.runner examples/shader.py
 ```
 
-Here are some excerpts from my visual performance with this tool.
-
-[![Visual Performance](https://img.youtube.com/vi/GgA-US7j_mQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=GgA-US7j_mQ)
-
-
-[![Visual Performance Short](https://img.youtube.com/vi/MtYe06zQa0w/maxresdefault.jpg)](https://www.youtube.com/shorts/MtYe06zQa0w)
-
-
-I made a short visual presentation about the tool here & I hope to make more :)
-
-[![Tool Presentation](https://img.youtube.com/vi/-CkD7TvG_aY/maxresdefault.jpg)](https://www.youtube.com/watch?v=-CkD7TvG_aY)
-
-
----
-
-
-
 ## Architecture
 
 Visuals in `chladni` are assembled inside a reactive `Pipeline` block, where inputs, generators, and geometries connect via live `Signal` streams and are routed to `Output` using the `>>` operator.
@@ -97,6 +80,23 @@ with Pipeline() as pipeline:
     gesture.overlay >> output
     warp >> output
 ```
+
+
+Here are some excerpts from my visual performance with this tool.
+
+[![Visual Performance](https://img.youtube.com/vi/GgA-US7j_mQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=GgA-US7j_mQ)
+
+
+[![Visual Performance Short](https://img.youtube.com/vi/MtYe06zQa0w/maxresdefault.jpg)](https://www.youtube.com/shorts/MtYe06zQa0w)
+
+
+I made a short visual presentation about the tool here & I hope to make more :)
+
+[![Tool Presentation](https://img.youtube.com/vi/-CkD7TvG_aY/maxresdefault.jpg)](https://www.youtube.com/watch?v=-CkD7TvG_aY)
+
+
+---
+
 
 ## License
 
