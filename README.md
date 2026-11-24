@@ -1,7 +1,7 @@
 <h1 align="center">Chladni aka Chutney</h1>
 
 <p align="center">
-  <em>Chladni or as I like to call it Chutney, is a Python based visual generated named after Ernst Chladni. It helps live code visuals that react to audio and gestures.</em>
+  <em>Chladni also known as Chutney, is a Python based visual generated named after Ernst Chladni. It helps live code visuals that react to audio and gestures.</em>
 </p>
 
 ---
@@ -49,7 +49,22 @@ You can also run any patch directly with the hot-reloading runner:
 python -m src.runner examples/shader.py
 ```
 
+Here are some excerpts from my visual performance with this tool.
+
+[![Visual Performance](https://img.youtube.com/vi/GgA-US7j_mQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=GgA-US7j_mQ)
+
+
+[![Visual Performance Short](https://img.youtube.com/vi/MtYe06zQa0w/maxresdefault.jpg)](https://www.youtube.com/shorts/MtYe06zQa0w)
+
+
+I made a short visual presentation about the tool here & I hope to make more :)
+
+[![Tool Presentation](https://img.youtube.com/vi/-CkD7TvG_aY/maxresdefault.jpg)](https://www.youtube.com/watch?v=-CkD7TvG_aY)
+
+
 ---
+
+
 
 ## Architecture
 
